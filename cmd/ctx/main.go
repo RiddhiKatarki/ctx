@@ -118,15 +118,17 @@ Always emits JSON — this command is built for tooling consumption.`,
 
 // Export flags
 var (
-	exportOutput        string
-	exportProjectName   string
-	exportPromptsFile   string
-	exportPromptsSource string
-	exportExtraFiles    string
-	exportSummaryProv   string
-	exportAPIKey        string
-	exportAPIBaseURL    string
-	exportModel         string
+	exportOutput         string
+	exportProjectName    string
+	exportPromptsFile    string
+	exportPromptsSource  string
+	exportExtraFiles     string
+	exportSummaryProv    string
+	exportAPIKey         string
+	exportAPIBaseURL     string
+	exportModel          string
+	exportNoSecretScan   bool
+	exportIncludeSecrets bool
 )
 
 // Import flags
@@ -153,6 +155,8 @@ func init() {
 	exportCmd.Flags().StringVar(&exportAPIKey, "api-key", "", "API key for LLM summary provider")
 	exportCmd.Flags().StringVar(&exportAPIBaseURL, "api-base-url", "", "base URL for LLM API (default: https://api.openai.com/v1)")
 	exportCmd.Flags().StringVar(&exportModel, "model", "", "LLM model name (default: gpt-4o)")
+	exportCmd.Flags().BoolVar(&exportNoSecretScan, "no-secret-scan", false, "disable content-based secret scanning (filename patterns still apply)")
+	exportCmd.Flags().BoolVar(&exportIncludeSecrets, "include-secrets", false, "preserve raw secret values in the bundle (default: redact)")
 
 	importCmd.Flags().StringVar(&importOutDir, "outdir", "", "directory to extract bundle contents to")
 }
@@ -198,13 +202,15 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	rep := buildReporter()
 	result, runErr := export.Run(export.Config{
-		OutputPath:      exportOutput,
-		ProjectName:     exportProjectName,
-		WorkingDir:      wd,
-		PromptProvider:  promptProv,
-		SummaryProvider: summProv,
-		ExtraFiles:      extraFiles,
-		Reporter:        rep,
+		OutputPath:        exportOutput,
+		ProjectName:       exportProjectName,
+		WorkingDir:        wd,
+		PromptProvider:    promptProv,
+		SummaryProvider:   summProv,
+		ExtraFiles:        extraFiles,
+		Reporter:          rep,
+		DisableSecretScan: exportNoSecretScan,
+		IncludeSecrets:    exportIncludeSecrets,
 	})
 	if runErr != nil {
 		return classifyExportError(runErr)

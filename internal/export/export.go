@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/RiddhiKatarki/ctx/internal/providers"
 	"github.com/RiddhiKatarki/ctx/internal/reporter"
 	"github.com/RiddhiKatarki/ctx/internal/schema"
+	"github.com/RiddhiKatarki/ctx/internal/secretscan"
 	"github.com/RiddhiKatarki/ctx/internal/summary"
 	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
@@ -35,6 +37,19 @@ type Config struct {
 	// JSONOutput is retained for backwards compatibility — when true
 	// and Reporter is nil, a JSONReporter is constructed automatically.
 	JSONOutput bool
+
+	// DisableSecretScan short-circuits content scanning. Filename
+	// patterns (.env, *.pem, etc.) still apply regardless.
+	DisableSecretScan bool
+
+	// IncludeSecrets, when true, preserves raw secret matches in the
+	// bundle (only redacted previews are always safe). Defaults to false
+	// — Phase 5 default excludes secret-bearing files and redacts the diff.
+	IncludeSecrets bool
+
+	// Scanner overrides the default secretscan.Scanner. Mostly useful
+	// for testing or custom rule sets.
+	Scanner *secretscan.Scanner
 }
 
 // secretPatterns are file patterns that are excluded from the bundle
@@ -54,18 +69,20 @@ var secretPatterns = []string{
 // Result holds the outcome of an export operation. JSON tags enable
 // machine-readable output when emitted with --json.
 type Result struct {
-	OutputPath      string   `json:"path"`
-	ProjectName     string   `json:"project_name"`
-	Branch          string   `json:"branch"`
-	RepoRoot        string   `json:"repository_root"`
-	FileCount       int      `json:"file_count"`
-	PromptCount     int      `json:"prompt_count"`
-	DiffSize        int      `json:"diff_size"`
-	BundleSize      int64    `json:"bundle_size"`
-	Skipped         []string `json:"skipped"`
-	SummaryProvider string   `json:"summary_provider"`
-	Commit         string   `json:"head_commit,omitempty"`
-	Dirty          bool     `json:"dirty"`
+	OutputPath       string                 `json:"path"`
+	ProjectName      string                 `json:"project_name"`
+	Branch           string                 `json:"branch"`
+	RepoRoot         string                 `json:"repository_root"`
+	FileCount        int                    `json:"file_count"`
+	PromptCount      int                    `json:"prompt_count"`
+	DiffSize         int                    `json:"diff_size"`
+	BundleSize       int64                  `json:"bundle_size"`
+	Skipped          []string               `json:"skipped"`
+	SummaryProvider  string                 `json:"summary_provider"`
+	Commit           string                 `json:"head_commit,omitempty"`
+	Dirty            bool                   `json:"dirty"`
+	Secrets          []secretscan.Finding   `json:"secrets,omitempty"`
+	SecretScanEnabled bool                  `json:"secret_scan_enabled"`
 }
 
 // human prints only when the Reporter is a HumanReporter — this preserves
@@ -117,6 +134,9 @@ func Run(cfg Config) (*Result, error) {
 	if cfg.OutputPath == "" {
 		cfg.OutputPath = "project.ctx"
 	}
+	if cfg.Scanner == nil {
+		cfg.Scanner = secretscan.New()
+	}
 
 	r := cfg.rep()
 	r.Event("start", map[string]any{"output": cfg.OutputPath})
@@ -166,6 +186,30 @@ func Run(cfg Config) (*Result, error) {
 	}
 
 	allFiles := mergeFiles(modifiedFiles, cfg.ExtraFiles)
+
+	// Apply .ctxignore if present in the working dir.
+	igPath := filepath.Join(cfg.WorkingDir, ".ctxignore")
+	ig, _ := secretscan.LoadIgnoreFile(igPath) // missing file is non-fatal
+	if ig != nil && len(ig.Patterns()) > 0 {
+		r.Event("ctxignore_loaded", map[string]any{"patterns": ig.Patterns()})
+		kept := allFiles[:0]
+		var ignored []string
+		for _, f := range allFiles {
+			if ig.Match(f) {
+				ignored = append(ignored, f)
+			} else {
+				kept = append(kept, f)
+			}
+		}
+		if len(ignored) > 0 {
+			r.Info("✓ Excluded %d file(s) by .ctxignore:\n", len(ignored))
+			for _, s := range ignored {
+				r.Info("  - %s\n", s)
+			}
+		}
+		allFiles = kept
+	}
+
 	filtered, skipped := filterSecrets(allFiles)
 
 	if len(skipped) > 0 {
@@ -185,6 +229,29 @@ func Run(cfg Config) (*Result, error) {
 	}
 	diff := string(diffBytes)
 	r.Event("diff_captured", map[string]any{"size": len(diff)})
+
+	var findings []secretscan.Finding
+	if !cfg.DisableSecretScan && cfg.Scanner != nil {
+		findings = cfg.Scanner.Scan([]byte(diff), "patch.diff")
+		if len(findings) > 0 {
+			r.Event("secrets_found", map[string]any{
+				"count":  len(findings),
+				"by_rule": secretscan.Summarise(findings),
+			})
+			if !cfg.IncludeSecrets {
+				diff = redactFindings(diff, findings)
+				r.Info("✓ Detected %d secret(s) in diff (redacted):\n", len(findings))
+				for _, f := range findings {
+					r.Info("  - [%s] %s (line %d)\n", f.Severity, f.Rule, f.Line)
+				}
+			} else {
+				r.Info("⚠ Detected %d secret(s) in diff (kept raw via --include-secrets):\n", len(findings))
+				for _, f := range findings {
+					r.Info("  - [%s] %s (line %d)\n", f.Severity, f.Rule, f.Line)
+				}
+			}
+		}
+	}
 
 	projectName := cfg.ProjectName
 	if projectName == "" {
@@ -240,23 +307,84 @@ func Run(cfg Config) (*Result, error) {
 	r.Info("\n✓ Bundle written: %s (%s)\n", outputPath, formatSize(bundleSize))
 	r.Info("  Sections: %s\n", strings.Join(schema.RequiredFiles, ", "))
 
+	// Findings exposed externally should always carry redacted previews,
+	// never the raw Match value.
+	safe := make([]secretscan.Finding, len(findings))
+	for i, f := range findings {
+		safe[i] = f
+		if !cfg.IncludeSecrets {
+			safe[i].Match = secretscan.RedactMatch(f.Match)
+		}
+	}
+
 	result := &Result{
-		OutputPath:       outputPath,
-		ProjectName:      projectName,
-		Branch:           gitMeta.CurrentBranch,
-		RepoRoot:         repoRoot,
-		FileCount:        len(filtered),
-		PromptCount:      len(prompts),
-		DiffSize:         len(diff),
-		BundleSize:       bundleSize,
-		Skipped:          skipped,
-		SummaryProvider:  providerName(cfg.SummaryProvider),
-		Commit:           gitMeta.HeadCommit,
-		Dirty:            gitMeta.Dirty,
+		OutputPath:        outputPath,
+		ProjectName:       projectName,
+		Branch:            gitMeta.CurrentBranch,
+		RepoRoot:          repoRoot,
+		FileCount:         len(filtered),
+		PromptCount:       len(prompts),
+		DiffSize:          len(diff),
+		BundleSize:        bundleSize,
+		Skipped:           skipped,
+		SummaryProvider:   providerName(cfg.SummaryProvider),
+		Commit:            gitMeta.HeadCommit,
+		Dirty:             gitMeta.Dirty,
+		Secrets:           safe,
+		SecretScanEnabled: !cfg.DisableSecretScan,
 	}
 
 	r.Done(result)
 	return result, nil
+}
+
+// redactFindings replaces secret matches in raw with [REDACTED:<rule>]
+// markers. The rule used in the marker follows the order findings
+// were discovered — earlier rules (more specific patterns) win over
+// the high-entropy fallback when the same match text matches several.
+func redactFindings(raw string, findings []secretscan.Finding) string {
+	if len(findings) == 0 {
+		return raw
+	}
+
+	type span struct {
+		start, end int
+		rule       string
+	}
+
+	// For each unique Match text, prefer the first rule that reported it.
+	seen := make(map[string]bool)
+	var spans []span
+	for _, f := range findings {
+		if seen[f.Match] {
+			continue
+		}
+		seen[f.Match] = true
+		from := 0
+		for {
+			pos := strings.Index(raw[from:], f.Match)
+			if pos < 0 {
+				break
+			}
+			abs := from + pos
+			spans = append(spans, span{start: abs, end: abs + len(f.Match), rule: f.Rule})
+			from = abs + len(f.Match)
+		}
+	}
+	if len(spans) == 0 {
+		return raw
+	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
+
+	var b strings.Builder
+	cursor := 0
+	for _, s := range spans {
+		b.WriteString(raw[cursor:s.start])
+		b.WriteString("[REDACTED:" + s.rule + "]")
+		cursor = s.end
+	}
+	b.WriteString(raw[cursor:])
+	return b.String()
 }
 
 func mergeFiles(modified, extra []string) []string {
