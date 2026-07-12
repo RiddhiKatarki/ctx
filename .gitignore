@@ -1,0 +1,33 @@
+# Binaries
+ctx
+ctx.exe
+*.exe
+
+# Build output
+dist/
+bin/
+
+# Test artifacts
+*.ctx
+!examples/*.ctx
+
+# Go
+vendor/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.local
+*.pem
+*.key
+id_rsa
+id_rsa.pub
