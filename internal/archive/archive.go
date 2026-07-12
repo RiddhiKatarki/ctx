@@ -99,12 +99,14 @@ func Extract(path string) (map[string][]byte, error) {
 type PeekResult struct {
 	Manifest *types.Manifest
 	Metadata *types.Metadata
+	Git      *types.GitMetadata
 	Summary  []byte
+	Diff     []byte
 	Files    []string
 }
 
 // Peek opens a .ctx archive and reads only the files needed for inspection:
-// manifest.json, metadata.json, summary.md, and files.json.
+// manifest.json, metadata.json, git.json, summary.md, files.json, and patch.diff.
 // This avoids full extraction for fast display.
 func Peek(path string) (*PeekResult, error) {
 	r, err := zip.OpenReader(path)
@@ -139,12 +141,30 @@ func Peek(path string) (*PeekResult, error) {
 			}
 			result.Metadata = &metadata
 
+		case schema.GitFile:
+			content, err := readZipEntry(f)
+			if err != nil {
+				return nil, err
+			}
+			var git types.GitMetadata
+			if err := json.Unmarshal(content, &git); err != nil {
+				return nil, fmt.Errorf("failed to parse git: %w", err)
+			}
+			result.Git = &git
+
 		case schema.SummaryFile:
 			content, err := readZipEntry(f)
 			if err != nil {
 				return nil, err
 			}
 			result.Summary = content
+
+		case schema.PatchFile:
+			content, err := readZipEntry(f)
+			if err != nil {
+				return nil, err
+			}
+			result.Diff = content
 
 		case schema.FilesFile:
 			content, err := readZipEntry(f)
