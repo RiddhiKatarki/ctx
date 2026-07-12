@@ -2,6 +2,7 @@ package export
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -50,6 +51,16 @@ type Config struct {
 	// Scanner overrides the default secretscan.Scanner. Mostly useful
 	// for testing or custom rule sets.
 	Scanner *secretscan.Scanner
+
+	// IncludeContents, when true, embeds the contents of files in the
+	// filtered file set into the bundle under contents/<path>. Files
+	// larger than ContentsThreshold are skipped (path-only entry kept).
+	IncludeContents bool
+
+	// ContentsThreshold, in bytes, caps the size of embedded file
+	// contents. Defaults to 256 KiB when zero. Files above the threshold
+	// are kept in files.json (path only) but not embedded.
+	ContentsThreshold int64
 }
 
 // secretPatterns are file patterns that are excluded from the bundle
@@ -69,20 +80,23 @@ var secretPatterns = []string{
 // Result holds the outcome of an export operation. JSON tags enable
 // machine-readable output when emitted with --json.
 type Result struct {
-	OutputPath       string                 `json:"path"`
-	ProjectName      string                 `json:"project_name"`
-	Branch           string                 `json:"branch"`
-	RepoRoot         string                 `json:"repository_root"`
-	FileCount        int                    `json:"file_count"`
-	PromptCount      int                    `json:"prompt_count"`
-	DiffSize         int                    `json:"diff_size"`
-	BundleSize       int64                  `json:"bundle_size"`
-	Skipped          []string               `json:"skipped"`
-	SummaryProvider  string                 `json:"summary_provider"`
-	Commit           string                 `json:"head_commit,omitempty"`
-	Dirty            bool                   `json:"dirty"`
-	Secrets          []secretscan.Finding   `json:"secrets,omitempty"`
-	SecretScanEnabled bool                  `json:"secret_scan_enabled"`
+	OutputPath        string                 `json:"path"`
+	ProjectName       string                 `json:"project_name"`
+	Branch            string                 `json:"branch"`
+	RepoRoot          string                 `json:"repository_root"`
+	FileCount         int                    `json:"file_count"`
+	PromptCount       int                    `json:"prompt_count"`
+	DiffSize          int                    `json:"diff_size"`
+	BundleSize        int64                  `json:"bundle_size"`
+	Skipped           []string               `json:"skipped"`
+	SummaryProvider   string                 `json:"summary_provider"`
+	Commit            string                 `json:"head_commit,omitempty"`
+	Dirty             bool                   `json:"dirty"`
+	Secrets           []secretscan.Finding   `json:"secrets,omitempty"`
+	SecretScanEnabled bool                   `json:"secret_scan_enabled"`
+	IncludesContents  bool                   `json:"includes_contents,omitempty"`
+	ContentsCount     int                    `json:"contents_count,omitempty"`
+	ContentsSkipped   []string               `json:"contents_skipped,omitempty"`
 }
 
 // human prints only when the Reporter is a HumanReporter — this preserves
@@ -282,6 +296,20 @@ func Run(cfg Config) (*Result, error) {
 	r.Event("snapshot_built", nil)
 	r.Info("✓ Built snapshot\n")
 
+	contents, contentsSkipped, contentsTotal := readContents(
+		cfg.WorkingDir, repoRoot, filtered, cfg.IncludeContents, cfg.ContentsThreshold,
+	)
+	if cfg.IncludeContents {
+		r.Event("contents_read", map[string]any{"count": contentsTotal, "skipped": len(contentsSkipped)})
+		if contentsTotal > 0 {
+			r.Info("✓ Embedded %d file(s) under contents/ (threshold %d bytes)\n",
+				contentsTotal, defaultContentsThreshold(cfg.ContentsThreshold))
+		}
+		for _, s := range contentsSkipped {
+			r.Info("  - skipped (above threshold): %s\n", s)
+		}
+	}
+
 	r.Event("summary_start", map[string]any{"provider": providerName(cfg.SummaryProvider)})
 	summ, err := cfg.SummaryProvider.Summarize(snapshot)
 	if err != nil {
@@ -290,7 +318,7 @@ func Run(cfg Config) (*Result, error) {
 	r.Event("summary_complete", map[string]any{"provider": providerName(cfg.SummaryProvider)})
 	r.Info("✓ Generated summary (%s)\n", providerName(cfg.SummaryProvider))
 
-	b := bundle.Build(snapshot, summ)
+	b := bundle.Build(snapshot, summ, contents)
 
 	serialized, err := b.Serialize()
 	if err != nil {
@@ -332,6 +360,9 @@ func Run(cfg Config) (*Result, error) {
 		Dirty:             gitMeta.Dirty,
 		Secrets:           safe,
 		SecretScanEnabled: !cfg.DisableSecretScan,
+		IncludesContents:  cfg.IncludeContents,
+		ContentsCount:     contentsTotal,
+		ContentsSkipped:   contentsSkipped,
 	}
 
 	r.Done(result)
@@ -458,4 +489,51 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+const defaultContentsThresholdBytes = 256 * 1024 // 256 KiB
+
+func defaultContentsThreshold(t int64) int64 {
+	if t <= 0 {
+		return defaultContentsThresholdBytes
+	}
+	return t
+}
+
+// readContents reads the bytes of files in paths when include is true,
+// respecting per-file threshold. Returns an empty map when disabled.
+// The keys are repo-relative paths; values are file bytes.
+// Skipped files are returned separately for reporting.
+func readContents(workingDir, repoRoot string, paths []string, include bool, threshold int64) (map[string][]byte, []string, int) {
+	_ = workingDir // reserved for future workingDir-relative path handling
+	if !include {
+		return nil, nil, 0
+	}
+	threshold = defaultContentsThreshold(threshold)
+	out := make(map[string][]byte, len(paths))
+	var skipped []string
+	read := 0
+	for _, rel := range paths {
+		abs := filepath.Join(repoRoot, rel)
+		fi, err := os.Stat(abs)
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		if fi.Size() > threshold {
+			skipped = append(skipped, rel)
+			continue
+		}
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		out[rel] = data
+		read++
+	}
+	if read == 0 {
+		out = nil
+	}
+	return out, skipped, read
 }

@@ -22,7 +22,18 @@ const (
 	PromptsFile  = "prompts.json"
 	FilesFile    = "files.json"
 	PatchFile    = "patch.diff"
+
+	// ContentsPrefix is the directory under which embedded file
+	// contents live when --include-contents is used.
+	ContentsPrefix = "contents/"
 )
+
+// IsContentsPath reports whether archive entry name is a contents
+// entry (under ContentsPrefix). Used to read non-required files
+// from a V2 bundle without disrupting V1 readers.
+func IsContentsPath(name string) bool {
+	return len(name) > len(ContentsPrefix) && name[:len(ContentsPrefix)] == ContentsPrefix
+}
 
 // RequiredFiles lists all files that must be present in a valid bundle.
 var RequiredFiles = []string{

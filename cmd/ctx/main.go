@@ -118,17 +118,19 @@ Always emits JSON — this command is built for tooling consumption.`,
 
 // Export flags
 var (
-	exportOutput         string
-	exportProjectName    string
-	exportPromptsFile    string
-	exportPromptsSource  string
-	exportExtraFiles     string
-	exportSummaryProv    string
-	exportAPIKey         string
-	exportAPIBaseURL     string
-	exportModel          string
-	exportNoSecretScan   bool
-	exportIncludeSecrets bool
+	exportOutput            string
+	exportProjectName       string
+	exportPromptsFile       string
+	exportPromptsSource     string
+	exportExtraFiles        string
+	exportSummaryProv       string
+	exportAPIKey            string
+	exportAPIBaseURL        string
+	exportModel             string
+	exportNoSecretScan      bool
+	exportIncludeSecrets    bool
+	exportIncludeContents   bool
+	exportContentsThreshold int64
 )
 
 // Import flags
@@ -157,6 +159,8 @@ func init() {
 	exportCmd.Flags().StringVar(&exportModel, "model", "", "LLM model name (default: gpt-4o)")
 	exportCmd.Flags().BoolVar(&exportNoSecretScan, "no-secret-scan", false, "disable content-based secret scanning (filename patterns still apply)")
 	exportCmd.Flags().BoolVar(&exportIncludeSecrets, "include-secrets", false, "preserve raw secret values in the bundle (default: redact)")
+	exportCmd.Flags().BoolVar(&exportIncludeContents, "include-contents", false, "embed file contents under contents/ (creates self-contained bundles)")
+	exportCmd.Flags().Int64Var(&exportContentsThreshold, "contents-threshold", 256*1024, "max bytes per embedded file (default: 256 KiB)")
 
 	importCmd.Flags().StringVar(&importOutDir, "outdir", "", "directory to extract bundle contents to")
 }
@@ -202,15 +206,17 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	rep := buildReporter()
 	result, runErr := export.Run(export.Config{
-		OutputPath:        exportOutput,
-		ProjectName:       exportProjectName,
-		WorkingDir:        wd,
-		PromptProvider:    promptProv,
-		SummaryProvider:   summProv,
-		ExtraFiles:        extraFiles,
-		Reporter:          rep,
-		DisableSecretScan: exportNoSecretScan,
-		IncludeSecrets:    exportIncludeSecrets,
+		OutputPath:         exportOutput,
+		ProjectName:        exportProjectName,
+		WorkingDir:         wd,
+		PromptProvider:     promptProv,
+		SummaryProvider:    summProv,
+		ExtraFiles:         extraFiles,
+		Reporter:           rep,
+		DisableSecretScan:  exportNoSecretScan,
+		IncludeSecrets:     exportIncludeSecrets,
+		IncludeContents:    exportIncludeContents,
+		ContentsThreshold:  exportContentsThreshold,
 	})
 	if runErr != nil {
 		return classifyExportError(runErr)

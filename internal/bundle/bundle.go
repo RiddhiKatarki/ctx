@@ -3,6 +3,8 @@ package bundle
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/RiddhiKatarki/ctx/internal/schema"
@@ -11,6 +13,8 @@ import (
 )
 
 // Bundle is the in-memory representation of all archive contents.
+// Contents holds file contents embedded under the "contents/" prefix
+// when the producing side used --include-contents.
 type Bundle struct {
 	Manifest types.Manifest
 	Metadata types.Metadata
@@ -19,22 +23,28 @@ type Bundle struct {
 	Prompts  []types.Prompt
 	Files    []string
 	Diff     string
+	Contents map[string][]byte
 }
 
 // Build assembles a Bundle from a Snapshot and a generated Summary.
-func Build(snapshot types.Snapshot, summ *types.Summary) *Bundle {
+// contents is the optional embedded file map (path → bytes); pass nil
+// to produce a metadata-only bundle.
+func Build(snapshot types.Snapshot, summ *types.Summary, contents map[string][]byte) *Bundle {
+	m := types.Manifest{
+		Version:          schema.BundleVersion,
+		CreatedAt:        time.Now().UTC(),
+		Tool:             schema.ToolName,
+		IncludesContents: len(contents) > 0,
+	}
 	return &Bundle{
-		Manifest: types.Manifest{
-			Version:   schema.BundleVersion,
-			CreatedAt: time.Now().UTC(),
-			Tool:      schema.ToolName,
-		},
+		Manifest: m,
 		Metadata: snapshot.Metadata,
 		Git:      snapshot.Git,
 		Summary:  *summ,
 		Prompts:  snapshot.Prompts,
 		Files:    snapshot.Files,
 		Diff:     snapshot.Diff,
+		Contents: contents,
 	}
 }
 
@@ -81,11 +91,21 @@ func (b *Bundle) Serialize() (map[string][]byte, error) {
 
 	files[schema.PatchFile] = []byte(b.Diff)
 
+	for path, content := range b.Contents {
+		// Sanitise path anchored at a virtual root so "../" segments
+		// are stripped. We remove the leading "/" so the entry sits
+		// cleanly under ContentsPrefix without a double slash.
+		clean := filepath.Clean(string(filepath.Separator) + path)
+		clean = strings.TrimPrefix(clean, string(filepath.Separator))
+		files[schema.ContentsPrefix+clean] = content
+	}
+
 	return files, nil
 }
 
 // Deserialize parses a map of {filename: bytes} into a Bundle,
-// validating the manifest version in the process.
+// validating the manifest version in the process. Contents entries
+// (under ContentsPrefix) are loaded into the bundle.Contents map.
 func Deserialize(files map[string][]byte) (*Bundle, error) {
 	var manifest types.Manifest
 	if data, ok := files[schema.ManifestFile]; ok {
@@ -139,6 +159,14 @@ func Deserialize(files map[string][]byte) (*Bundle, error) {
 		summ = *parsed
 	}
 
+	contents := make(map[string][]byte)
+	for name, data := range files {
+		if schema.IsContentsPath(name) {
+			rel := name[len(schema.ContentsPrefix):]
+			contents[rel] = data
+		}
+	}
+
 	return &Bundle{
 		Manifest: manifest,
 		Metadata: metadata,
@@ -147,5 +175,6 @@ func Deserialize(files map[string][]byte) (*Bundle, error) {
 		Prompts:  prompts,
 		Files:    fileList,
 		Diff:     diff,
+		Contents: contents,
 	}, nil
 }

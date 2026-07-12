@@ -1,6 +1,7 @@
 package export
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -412,5 +413,86 @@ func TestRun_JSONOutput_SkippedList(t *testing.T) {
 	}
 	if len(parsed) != 1 || parsed[0] != ".env" {
 		t.Errorf("expected [\"\\u002eenv\"], got %v", parsed)
+	}
+}
+
+func TestRun_IncludeContents(t *testing.T) {
+	dir := initTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("extra contents"), 0644); err != nil {
+		t.Fatalf("write extra: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "contents.ctx")
+	cfg := Config{
+		OutputPath:      outputPath,
+		WorkingDir:      dir,
+		GitProvider:     git.NewCLIGitProvider(dir),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
+		SummaryProvider: summary.NewTemplateProvider(),
+		IncludeContents: true,
+	}
+
+	result, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if !result.IncludesContents {
+		t.Error("expected IncludesContents=true")
+	}
+
+	if result.ContentsCount < 1 {
+		t.Errorf("expected at least 1 file embedded, got %d", result.ContentsCount)
+	}
+
+	// Verify the contents directory exists in the produced bundle.
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read bundle: %v", err)
+	}
+	if !bytes.Contains(data, []byte("contents/")) {
+		t.Error("expected bundle to contain entries under contents/")
+	}
+}
+
+func TestRun_IncludeContents_ThresholdSkips(t *testing.T) {
+	dir := initTestRepo(t)
+	// Create a file whose size clearly exceeds 1 KiB threshold.
+	big := make([]byte, 4096)
+	for i := range big {
+		big[i] = 'X'
+	}
+	if err := os.WriteFile(filepath.Join(dir, "big.txt"), big, 0644); err != nil {
+		t.Fatalf("write big: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "threshold.ctx")
+	cfg := Config{
+		OutputPath:        outputPath,
+		WorkingDir:        dir,
+		GitProvider:       git.NewCLIGitProvider(dir),
+		PromptProvider:    mustPromptProvider(t, providers.Options{}),
+		SummaryProvider:   summary.NewTemplateProvider(),
+		IncludeContents:   true,
+		ContentsThreshold: 1024,
+		ExtraFiles:        []string{"big.txt"},
+	}
+
+	result, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if len(result.ContentsSkipped) == 0 {
+		t.Errorf("expected at least one file to be skipped due to threshold")
+	}
+	skippedBig := false
+	for _, s := range result.ContentsSkipped {
+		if s == "big.txt" {
+			skippedBig = true
+		}
+	}
+	if !skippedBig {
+		t.Errorf("expected big.txt to be skipped, got: %v", result.ContentsSkipped)
 	}
 }

@@ -27,26 +27,28 @@ type Config struct {
 // Result holds the outcome of an import operation. JSON tags enable
 // machine-readable output when emitted with --json.
 type Result struct {
-	Path            string   `json:"path"`
-	ManifestVersion int      `json:"manifest_version"`
-	Tool            string   `json:"tool"`
-	ProjectName     string   `json:"project_name"`
-	Branch          string   `json:"branch"`
-	CreatedAt       string   `json:"created_at"`
-	Generator       string   `json:"generator"`
-	RepositoryRoot  string   `json:"repository_root"`
-	OS              string   `json:"os"`
-	Commit          string   `json:"head_commit"`
-	Dirty           bool     `json:"dirty"`
-	RemoteURL       string   `json:"remote_url,omitempty"`
-	CurrentTag      string   `json:"current_tag,omitempty"`
-	FileCount       int      `json:"file_count"`
-	PromptCount     int      `json:"prompt_count"`
-	HasDiff         bool     `json:"has_diff"`
-	DiffSize        int      `json:"diff_size"`
-	Files           []string `json:"files"`
-	ExtractedTo     string   `json:"extracted_to,omitempty"`
-	Valid           bool     `json:"valid"`
+	Path             string   `json:"path"`
+	ManifestVersion  int      `json:"manifest_version"`
+	Tool             string   `json:"tool"`
+	ProjectName      string   `json:"project_name"`
+	Branch           string   `json:"branch"`
+	CreatedAt        string   `json:"created_at"`
+	Generator        string   `json:"generator"`
+	RepositoryRoot   string   `json:"repository_root"`
+	OS               string   `json:"os"`
+	Commit           string   `json:"head_commit"`
+	Dirty            bool     `json:"dirty"`
+	RemoteURL        string   `json:"remote_url,omitempty"`
+	CurrentTag       string   `json:"current_tag,omitempty"`
+	FileCount        int      `json:"file_count"`
+	PromptCount      int      `json:"prompt_count"`
+	HasDiff          bool     `json:"has_diff"`
+	DiffSize         int      `json:"diff_size"`
+	Files            []string `json:"files"`
+	ExtractedTo      string   `json:"extracted_to,omitempty"`
+	Valid            bool     `json:"valid"`
+	IncludesContents bool     `json:"includes_contents"`
+	ContentsCount    int      `json:"contents_count"`
 }
 
 var (
@@ -118,6 +120,8 @@ func Run(cfg Config) (*Result, error) {
 		DiffSize:        len(b.Diff),
 		Files:           b.Files,
 		Valid:           true,
+		IncludesContents: b.Manifest.IncludesContents,
+		ContentsCount:    len(b.Contents),
 	}
 
 	if result.Files == nil {
