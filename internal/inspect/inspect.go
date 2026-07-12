@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/RiddhiKatarki/ctx/internal/archive"
+	"github.com/RiddhiKatarki/ctx/internal/reporter"
 	"github.com/RiddhiKatarki/ctx/internal/summary"
 )
 
@@ -12,38 +13,52 @@ import (
 type Config struct {
 	Path string
 
-	// JSONOutput, when true, suppresses human-readable prints
-	// and the caller is expected to encode the Result as JSON.
+	// Reporter controls output for stream/json modes.
+	Reporter reporter.Reporter
+
+	// JSONOutput retained for backwards compat — auto creates JSONReporter.
 	JSONOutput bool
 }
 
 // Result is the structured output of an inspect operation.
 // JSON tags enable machine-readable output when emitted with --json.
 type Result struct {
-	Path           string            `json:"path"`
-	Manifest       map[string]any    `json:"manifest"`
-	Metadata       map[string]any    `json:"metadata"`
-	Files          []string          `json:"files"`
-	FileCount      int               `json:"file_count"`
-	Summary        string            `json:"summary"`
+	Path            string            `json:"path"`
+	Manifest        map[string]any    `json:"manifest"`
+	Metadata        map[string]any    `json:"metadata"`
+	Files           []string          `json:"files"`
+	FileCount       int               `json:"file_count"`
 	SummarySections map[string]string `json:"summary_sections"`
-	Valid          bool              `json:"valid"`
+	Valid           bool              `json:"valid"`
 }
 
-func (cfg Config) human(format string, a ...any) {
-	if cfg.JSONOutput {
-		return
+var (
+	defaultHumanReporter = reporter.NewHumanReporter(nil)
+	defaultJSONReporter  = reporter.NewJSONReporter(nil)
+)
+
+func (cfg Config) rep() reporter.Reporter {
+	if cfg.Reporter != nil {
+		return cfg.Reporter
 	}
-	fmt.Printf(format, a...)
+	if cfg.JSONOutput {
+		return defaultJSONReporter
+	}
+	return defaultHumanReporter
 }
 
 // Run reads a .ctx bundle without importing and returns a structured Result.
 func Run(cfg Config) (*Result, error) {
+	r := cfg.rep()
+	r.Event("start", map[string]any{"path": cfg.Path})
+
 	if cfg.Path == "" {
+		r.Event("error", map[string]any{"stage": "input", "message": "no bundle path specified"})
 		return nil, fmt.Errorf("no bundle path specified")
 	}
 
 	if !archive.IsZipFile(cfg.Path) {
+		r.Event("error", map[string]any{"stage": "validate", "message": "not a valid .ctx archive"})
 		return nil, fmt.Errorf("%s is not a valid .ctx archive (not a ZIP file)", cfg.Path)
 	}
 
@@ -51,6 +66,7 @@ func Run(cfg Config) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect archive: %w", err)
 	}
+	r.Event("archive_read", map[string]any{"path": cfg.Path, "version": peek.Manifest.Version})
 
 	projectName := "Unknown"
 	if peek.Metadata != nil {
@@ -66,15 +82,15 @@ func Run(cfg Config) (*Result, error) {
 	parsed := summary.ParseMarkdownSummary(summaryText)
 
 	sections := map[string]string{
-		"current_objective":         parsed.CurrentObjective,
-		"completed_work":            parsed.CompletedWork,
-		"remaining_tasks":           parsed.RemainingTasks,
-		"known_bugs":                parsed.KnownBugs,
-		"architecture_decisions":    parsed.ArchitectureDecisions,
-		"files_to_read_first":       parsed.FilesToReadFirst,
+		"current_objective":          parsed.CurrentObjective,
+		"completed_work":             parsed.CompletedWork,
+		"remaining_tasks":            parsed.RemainingTasks,
+		"known_bugs":                 parsed.KnownBugs,
+		"architecture_decisions":     parsed.ArchitectureDecisions,
+		"files_to_read_first":        parsed.FilesToReadFirst,
 		"previous_failed_approaches": parsed.PreviousFailedApproaches,
-		"suggested_next_prompt":     parsed.SuggestedNextPrompt,
-		"estimated_reading_time":    parsed.EstimatedReadingTime,
+		"suggested_next_prompt":      parsed.SuggestedNextPrompt,
+		"estimated_reading_time":     parsed.EstimatedReadingTime,
 	}
 
 	result := &Result{
@@ -94,7 +110,6 @@ func Run(cfg Config) (*Result, error) {
 		},
 		Files:           peek.Files,
 		FileCount:       len(peek.Files),
-		Summary:         summaryText,
 		SummarySections: sections,
 		Valid:           true,
 	}
@@ -115,85 +130,86 @@ func Run(cfg Config) (*Result, error) {
 		result.Files = []string{}
 	}
 
-	cfg.human("Project: %s\n\n", projectName)
+	r.Info("Project: %s\n\n", projectName)
 
-	cfg.human("Branch:\n")
-	cfg.human("  %s\n\n", branch)
+	r.Info("Branch:\n")
+	r.Info("  %s\n\n", branch)
 
-	cfg.human("Current Goal:\n")
+	r.Info("Current Goal:\n")
 	if parsed.CurrentObjective != "" {
-		cfg.human("  %s\n", indentLines(parsed.CurrentObjective, "  "))
+		r.Info("  %s\n", indentLines(parsed.CurrentObjective, "  "))
 	} else {
-		cfg.human("  (not specified)\n")
+		r.Info("  (not specified)\n")
 	}
-	cfg.human("\n")
+	r.Info("\n")
 
-	cfg.human("Modified Files:\n")
-	cfg.human("  %d\n\n", len(peek.Files))
+	r.Info("Modified Files:\n")
+	r.Info("  %d\n\n", len(peek.Files))
 
-	cfg.human("Known Bug:\n")
+	r.Info("Known Bug:\n")
 	if parsed.KnownBugs != "" {
-		cfg.human("  %s\n", indentLines(parsed.KnownBugs, "  "))
+		r.Info("  %s\n", indentLines(parsed.KnownBugs, "  "))
 	} else {
-		cfg.human("  (none documented)\n")
+		r.Info("  (none documented)\n")
 	}
-	cfg.human("\n")
+	r.Info("\n")
 
-	cfg.human("Completed Work:\n")
+	r.Info("Completed Work:\n")
 	if parsed.CompletedWork != "" {
-		cfg.human("  %s\n", indentLines(parsed.CompletedWork, "  "))
+		r.Info("  %s\n", indentLines(parsed.CompletedWork, "  "))
 	} else {
-		cfg.human("  (not specified)\n")
+		r.Info("  (not specified)\n")
 	}
-	cfg.human("\n")
+	r.Info("\n")
 
-	cfg.human("Remaining Tasks:\n")
+	r.Info("Remaining Tasks:\n")
 	if parsed.RemainingTasks != "" {
-		cfg.human("  %s\n", indentLines(parsed.RemainingTasks, "  "))
+		r.Info("  %s\n", indentLines(parsed.RemainingTasks, "  "))
 	} else {
-		cfg.human("  (not specified)\n")
+		r.Info("  (not specified)\n")
 	}
-	cfg.human("\n")
+	r.Info("\n")
 
-	cfg.human("Architecture Decisions:\n")
+	r.Info("Architecture Decisions:\n")
 	if parsed.ArchitectureDecisions != "" {
-		cfg.human("  %s\n", indentLines(parsed.ArchitectureDecisions, "  "))
+		r.Info("  %s\n", indentLines(parsed.ArchitectureDecisions, "  "))
 	} else {
-		cfg.human("  (not specified)\n")
+		r.Info("  (not specified)\n")
 	}
-	cfg.human("\n")
+	r.Info("\n")
 
-	cfg.human("Files To Read First:\n")
+	r.Info("Files To Read First:\n")
 	if parsed.FilesToReadFirst != "" {
-		cfg.human("  %s\n", indentLines(parsed.FilesToReadFirst, "  "))
+		r.Info("  %s\n", indentLines(parsed.FilesToReadFirst, "  "))
 	} else {
-		cfg.human("  (not specified)\n")
+		r.Info("  (not specified)\n")
 	}
-	cfg.human("\n")
+	r.Info("\n")
 
-	cfg.human("Previous Failed Approaches:\n")
+	r.Info("Previous Failed Approaches:\n")
 	if parsed.PreviousFailedApproaches != "" {
-		cfg.human("  %s\n", indentLines(parsed.PreviousFailedApproaches, "  "))
+		r.Info("  %s\n", indentLines(parsed.PreviousFailedApproaches, "  "))
 	} else {
-		cfg.human("  (none documented)\n")
+		r.Info("  (none documented)\n")
 	}
-	cfg.human("\n")
+	r.Info("\n")
 
-	cfg.human("Suggested Next Prompt:\n")
+	r.Info("Suggested Next Prompt:\n")
 	if parsed.SuggestedNextPrompt != "" {
-		cfg.human("  %s\n", indentLines(parsed.SuggestedNextPrompt, "  "))
+		r.Info("  %s\n", indentLines(parsed.SuggestedNextPrompt, "  "))
 	} else {
-		cfg.human("  (not specified)\n")
+		r.Info("  (not specified)\n")
 	}
-	cfg.human("\n")
+	r.Info("\n")
 
-	cfg.human("Estimated Reading Time:\n")
+	r.Info("Estimated Reading Time:\n")
 	if parsed.EstimatedReadingTime != "" {
-		cfg.human("  %s\n", parsed.EstimatedReadingTime)
+		r.Info("  %s\n", parsed.EstimatedReadingTime)
 	} else {
-		cfg.human("  (not specified)\n")
+		r.Info("  (not specified)\n")
 	}
 
+	r.Done(result)
 	return result, nil
 }
 

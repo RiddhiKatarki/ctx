@@ -6,6 +6,7 @@ import (
 
 	"github.com/RiddhiKatarki/ctx/internal/archive"
 	"github.com/RiddhiKatarki/ctx/internal/bundle"
+	"github.com/RiddhiKatarki/ctx/internal/reporter"
 )
 
 // Config holds options for the import operation.
@@ -16,8 +17,10 @@ type Config struct {
 	// If empty, the bundle is only validated and displayed.
 	OutDir string
 
-	// JSONOutput, when true, suppresses human-readable prints
-	// and the caller is expected to encode the Result as JSON.
+	// Reporter controls progress output for stream/json modes.
+	Reporter reporter.Reporter
+
+	// JSONOutput retained for backwards compat — auto-creates JSONReporter.
 	JSONOutput bool
 }
 
@@ -46,39 +49,54 @@ type Result struct {
 	Valid           bool     `json:"valid"`
 }
 
-func (cfg Config) human(format string, a ...any) {
-	if cfg.JSONOutput {
-		return
+var (
+	defaultHumanReporter = reporter.NewHumanReporter(nil)
+	defaultJSONReporter  = reporter.NewJSONReporter(nil)
+)
+
+func (cfg Config) rep() reporter.Reporter {
+	if cfg.Reporter != nil {
+		return cfg.Reporter
 	}
-	fmt.Printf(format, a...)
+	if cfg.JSONOutput {
+		return defaultJSONReporter
+	}
+	return defaultHumanReporter
 }
 
 // Run executes the import flow:
 // validate archive → extract → read manifest → display summary.
 func Run(cfg Config) (*Result, error) {
+	r := cfg.rep()
+	r.Event("start", map[string]any{"path": cfg.Path})
+
 	if cfg.Path == "" {
+		r.Event("error", map[string]any{"stage": "input", "message": "no bundle path specified"})
 		return nil, fmt.Errorf("no bundle path specified")
 	}
 
 	if !archive.IsZipFile(cfg.Path) {
+		r.Event("error", map[string]any{"stage": "validate", "message": "not a valid .ctx archive"})
 		return nil, fmt.Errorf("%s is not a valid .ctx archive (not a ZIP file)", cfg.Path)
 	}
 
-	cfg.human("✓ Validating archive: %s\n", cfg.Path)
+	r.Info("✓ Validating archive: %s\n", cfg.Path)
 
 	files, err := archive.Extract(cfg.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract archive: %w", err)
 	}
 
-	cfg.human("✓ Archive extracted (%d files)\n", len(files))
+	r.Event("extracted", map[string]any{"count": len(files)})
+	r.Info("✓ Archive extracted (%d files)\n", len(files))
 
 	b, err := bundle.Deserialize(files)
 	if err != nil {
 		return nil, fmt.Errorf("failed to deserialize bundle: %w", err)
 	}
 
-	cfg.human("✓ Manifest validated (version %d, tool: %s)\n", b.Manifest.Version, b.Manifest.Tool)
+	r.Event("manifest_validated", map[string]any{"version": b.Manifest.Version, "tool": b.Manifest.Tool})
+	r.Info("✓ Manifest validated (version %d, tool: %s)\n", b.Manifest.Version, b.Manifest.Tool)
 
 	result := &Result{
 		Path:            cfg.Path,
@@ -111,48 +129,50 @@ func Run(cfg Config) (*Result, error) {
 			return nil, fmt.Errorf("failed to extract to directory: %w", err)
 		}
 		result.ExtractedTo = cfg.OutDir
-		cfg.human("✓ Files extracted to: %s\n", cfg.OutDir)
+		r.Event("extracted_to", map[string]any{"path": cfg.OutDir})
+		r.Info("✓ Files extracted to: %s\n", cfg.OutDir)
 	}
 
-	cfg.human("\n════════════════════════════════════════\n")
-	cfg.human("  Bundle Summary\n")
-	cfg.human("════════════════════════════════════════\n")
-	cfg.human("  Project:       %s\n", b.Metadata.ProjectName)
-	cfg.human("  Branch:        %s\n", b.Metadata.Branch)
-	cfg.human("  Created:       %s\n", b.Metadata.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
-	cfg.human("  Generator:     %s\n", b.Metadata.Generator)
-	cfg.human("  Repository:    %s\n", b.Metadata.RepositoryRoot)
-	cfg.human("  OS:            %s\n", b.Metadata.OS)
-	cfg.human("──────────────────────────────────────────\n")
-	cfg.human("  HEAD:          %s\n", b.Git.HeadCommit)
-	cfg.human("  Dirty:         %t\n", b.Git.Dirty)
+	r.Info("\n════════════════════════════════════════\n")
+	r.Info("  Bundle Summary\n")
+	r.Info("════════════════════════════════════════\n")
+	r.Info("  Project:       %s\n", b.Metadata.ProjectName)
+	r.Info("  Branch:        %s\n", b.Metadata.Branch)
+	r.Info("  Created:       %s\n", b.Metadata.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
+	r.Info("  Generator:     %s\n", b.Metadata.Generator)
+	r.Info("  Repository:    %s\n", b.Metadata.RepositoryRoot)
+	r.Info("  OS:            %s\n", b.Metadata.OS)
+	r.Info("──────────────────────────────────────────\n")
+	r.Info("  HEAD:          %s\n", b.Git.HeadCommit)
+	r.Info("  Dirty:         %t\n", b.Git.Dirty)
 	if b.Git.RemoteURL != "" {
-		cfg.human("  Remote:        %s\n", b.Git.RemoteURL)
+		r.Info("  Remote:        %s\n", b.Git.RemoteURL)
 	}
 	if b.Git.CurrentTag != "" {
-		cfg.human("  Tag:           %s\n", b.Git.CurrentTag)
+		r.Info("  Tag:           %s\n", b.Git.CurrentTag)
 	}
-	cfg.human("──────────────────────────────────────────\n")
-	cfg.human("  Files:         %d\n", len(b.Files))
-	cfg.human("  Prompts:       %d\n", len(b.Prompts))
-	cfg.human("  Diff present:  %t\n", b.Diff != "")
+	r.Info("──────────────────────────────────────────\n")
+	r.Info("  Files:         %d\n", len(b.Files))
+	r.Info("  Prompts:       %d\n", len(b.Prompts))
+	r.Info("  Diff present:  %t\n", b.Diff != "")
 	if b.Diff != "" {
-		cfg.human("  Diff size:     %d bytes\n", len(b.Diff))
+		r.Info("  Diff size:     %d bytes\n", len(b.Diff))
 	}
-	cfg.human("════════════════════════════════════════\n")
+	r.Info("════════════════════════════════════════\n")
 
 	if len(b.Files) > 0 {
-		cfg.human("\nModified Files:\n")
+		r.Info("\nModified Files:\n")
 		for _, f := range b.Files {
-			cfg.human("  %s\n", f)
+			r.Info("  %s\n", f)
 		}
 	}
 
 	if b.Diff != "" && cfg.OutDir != "" {
-		cfg.human("\nTo apply the uncommitted changes:\n")
-		cfg.human("  git apply %s/patch.diff\n", cfg.OutDir)
+		r.Info("\nTo apply the uncommitted changes:\n")
+		r.Info("  git apply %s/patch.diff\n", cfg.OutDir)
 	}
 
+	r.Done(result)
 	return result, nil
 }
 

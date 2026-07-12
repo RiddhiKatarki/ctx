@@ -1,6 +1,6 @@
 # Binaries
-ctx
-ctx.exe
+/ctx
+/ctx.exe
 *.exe
 
 # Build output

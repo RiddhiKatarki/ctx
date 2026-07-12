@@ -11,6 +11,7 @@ import (
 	"github.com/RiddhiKatarki/ctx/internal/bundle"
 	"github.com/RiddhiKatarki/ctx/internal/git"
 	"github.com/RiddhiKatarki/ctx/internal/providers"
+	"github.com/RiddhiKatarki/ctx/internal/reporter"
 	"github.com/RiddhiKatarki/ctx/internal/schema"
 	"github.com/RiddhiKatarki/ctx/internal/summary"
 	"github.com/RiddhiKatarki/ctx/pkg/types"
@@ -26,9 +27,13 @@ type Config struct {
 	SummaryProvider summary.SummaryProvider
 	ExtraFiles      []string
 
-	// JSONOutput, when true, suppresses human-readable prints
-	// and the caller is expected to encode the Result as JSON.
-	// Error formatting remains the caller's responsibility.
+	// Reporter controls progress output. Defaults to a HumanReporter
+	// writing to stderr if nil. JSON / Stream reporters emit structured
+	// events and a final result on Done().
+	Reporter reporter.Reporter
+
+	// JSONOutput is retained for backwards compatibility — when true
+	// and Reporter is nil, a JSONReporter is constructed automatically.
 	JSONOutput bool
 }
 
@@ -63,13 +68,30 @@ type Result struct {
 	Dirty          bool     `json:"dirty"`
 }
 
-// human prints only when JSONOutput is false.
+// human prints only when the Reporter is a HumanReporter — this preserves
+// the historical printf-path while still routing through Reporter so future
+// per-event customisation stays consistent.
 func (cfg Config) human(format string, a ...any) {
-	if cfg.JSONOutput {
-		return
-	}
-	fmt.Printf(format, a...)
+	r := cfg.rep()
+	r.Info(format, a...)
 }
+
+// rep returns cfg.Reporter or a default HumanReporter on stdout.
+func (cfg Config) rep() reporter.Reporter {
+	if cfg.Reporter != nil {
+		return cfg.Reporter
+	}
+	if cfg.JSONOutput {
+		return defaultJSONReporter
+	}
+	return defaultHumanReporter
+}
+
+// defaults are process-wide fallbacks used when callers don't supply one.
+var (
+	defaultHumanReporter = reporter.NewHumanReporter(nil)
+	defaultJSONReporter  = reporter.NewJSONReporter(nil)
+)
 
 // Run executes the full export flow:
 // detect git → read metadata → read prompts → collect files →
@@ -92,7 +114,12 @@ func Run(cfg Config) (*Result, error) {
 		cfg.OutputPath = "project.ctx"
 	}
 
+	r := cfg.rep()
+	r.Event("start", map[string]any{"output": cfg.OutputPath})
+	r.Info("✓ Detected Git repository\n")
+
 	if !cfg.GitProvider.IsRepository() {
+		r.Event("error", map[string]any{"stage": "git_detect", "message": "not a git repository"})
 		return nil, fmt.Errorf("not a git repository (or any of the parent directories): .git")
 	}
 
@@ -101,8 +128,8 @@ func Run(cfg Config) (*Result, error) {
 		return nil, fmt.Errorf("failed to determine repository root: %w", err)
 	}
 
-	cfg.human("✓ Detected Git repository\n")
-	cfg.human("  Root: %s\n", repoRoot)
+	r.Event("git_detected", map[string]any{"root": repoRoot})
+	r.Info("  Root: %s\n", repoRoot)
 
 	gitMeta, err := cfg.GitProvider.Metadata()
 	if err != nil {
@@ -113,15 +140,21 @@ func Run(cfg Config) (*Result, error) {
 	if gitMeta.Dirty {
 		statusStr = "dirty"
 	}
-	cfg.human("  Branch: %s\n", gitMeta.CurrentBranch)
-	cfg.human("  HEAD:   %s\n", gitMeta.HeadCommit[:min(7, len(gitMeta.HeadCommit))])
-	cfg.human("  Status: %s\n", statusStr)
+	r.Event("git_metadata", map[string]any{
+		"branch": gitMeta.CurrentBranch,
+		"head":   gitMeta.HeadCommit,
+		"dirty":  gitMeta.Dirty,
+	})
+	r.Info("  Branch: %s\n", gitMeta.CurrentBranch)
+	r.Info("  HEAD:   %s\n", gitMeta.HeadCommit[:min(7, len(gitMeta.HeadCommit))])
+	r.Info("  Status: %s\n", statusStr)
 
 	prompts, err := cfg.PromptProvider.History()
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect prompt history: %w", err)
 	}
-	cfg.human("✓ Collected %d prompt entries\n", len(prompts))
+	r.Event("prompts_collected", map[string]any{"count": len(prompts)})
+	r.Info("✓ Collected %d prompt entries\n", len(prompts))
 
 	modifiedFiles, err := cfg.GitProvider.ModifiedFiles()
 	if err != nil {
@@ -132,19 +165,22 @@ func Run(cfg Config) (*Result, error) {
 	filtered, skipped := filterSecrets(allFiles)
 
 	if len(skipped) > 0 {
-		cfg.human("✓ Excluded %d file(s) matching secret patterns:\n", len(skipped))
+		r.Event("files_excluded", map[string]any{"count": len(skipped), "patterns": secretPatterns})
+		r.Info("✓ Excluded %d file(s) matching secret patterns:\n", len(skipped))
 		for _, s := range skipped {
-			cfg.human("  - %s\n", s)
+			r.Info("  - %s\n", s)
 		}
 	}
 
-	cfg.human("✓ Collected %d file(s)\n", len(filtered))
+	r.Event("files_collected", map[string]any{"count": len(filtered)})
+	r.Info("✓ Collected %d file(s)\n", len(filtered))
 
 	diffBytes, err := cfg.GitProvider.Diff()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get git diff: %w", err)
 	}
 	diff := string(diffBytes)
+	r.Event("diff_captured", map[string]any{"size": len(diff)})
 
 	projectName := cfg.ProjectName
 	if projectName == "" {
@@ -172,13 +208,16 @@ func Run(cfg Config) (*Result, error) {
 		skipped = []string{}
 	}
 
-	cfg.human("✓ Built snapshot\n")
+	r.Event("snapshot_built", nil)
+	r.Info("✓ Built snapshot\n")
 
+	r.Event("summary_start", map[string]any{"provider": providerName(cfg.SummaryProvider)})
 	summ, err := cfg.SummaryProvider.Summarize(snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate summary: %w", err)
 	}
-	cfg.human("✓ Generated summary (%s)\n", providerName(cfg.SummaryProvider))
+	r.Event("summary_complete", map[string]any{"provider": providerName(cfg.SummaryProvider)})
+	r.Info("✓ Generated summary (%s)\n", providerName(cfg.SummaryProvider))
 
 	b := bundle.Build(snapshot, summ)
 
@@ -193,24 +232,27 @@ func Run(cfg Config) (*Result, error) {
 	}
 
 	bundleSize, _ := archive.Size(outputPath)
+	r.Event("bundle_written", map[string]any{"path": outputPath, "size": bundleSize})
+	r.Info("\n✓ Bundle written: %s (%s)\n", outputPath, formatSize(bundleSize))
+	r.Info("  Sections: %s\n", strings.Join(schema.RequiredFiles, ", "))
 
-	cfg.human("\n✓ Bundle written: %s (%s)\n", outputPath, formatSize(bundleSize))
-	cfg.human("  Sections: %s\n", strings.Join(schema.RequiredFiles, ", "))
+	result := &Result{
+		OutputPath:       outputPath,
+		ProjectName:      projectName,
+		Branch:           gitMeta.CurrentBranch,
+		RepoRoot:         repoRoot,
+		FileCount:        len(filtered),
+		PromptCount:      len(prompts),
+		DiffSize:         len(diff),
+		BundleSize:       bundleSize,
+		Skipped:          skipped,
+		SummaryProvider:  providerName(cfg.SummaryProvider),
+		Commit:           gitMeta.HeadCommit,
+		Dirty:            gitMeta.Dirty,
+	}
 
-	return &Result{
-		OutputPath:      outputPath,
-		ProjectName:    projectName,
-		Branch:         gitMeta.CurrentBranch,
-		RepoRoot:       repoRoot,
-		FileCount:      len(filtered),
-		PromptCount:    len(prompts),
-		DiffSize:       len(diff),
-		BundleSize:     bundleSize,
-		Skipped:        skipped,
-		SummaryProvider: providerName(cfg.SummaryProvider),
-		Commit:         gitMeta.HeadCommit,
-		Dirty:          gitMeta.Dirty,
-	}, nil
+	r.Done(result)
+	return result, nil
 }
 
 func mergeFiles(modified, extra []string) []string {
