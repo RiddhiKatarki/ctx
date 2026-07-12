@@ -18,13 +18,18 @@ import (
 
 // Config holds all dependencies and options for the export operation.
 type Config struct {
-	OutputPath       string
-	ProjectName      string
-	WorkingDir       string
-	GitProvider      git.GitProvider
-	PromptProvider   providers.PromptProvider
-	SummaryProvider  summary.SummaryProvider
-	ExtraFiles       []string
+	OutputPath      string
+	ProjectName     string
+	WorkingDir      string
+	GitProvider     git.GitProvider
+	PromptProvider  providers.PromptProvider
+	SummaryProvider summary.SummaryProvider
+	ExtraFiles      []string
+
+	// JSONOutput, when true, suppresses human-readable prints
+	// and the caller is expected to encode the Result as JSON.
+	// Error formatting remains the caller's responsibility.
+	JSONOutput bool
 }
 
 // secretPatterns are file patterns that are excluded from the bundle
@@ -41,13 +46,29 @@ var secretPatterns = []string{
 	"*.pfx",
 }
 
-// Result holds the outcome of an export operation.
+// Result holds the outcome of an export operation. JSON tags enable
+// machine-readable output when emitted with --json.
 type Result struct {
-	OutputPath string
-	FileCount  int
-	DiffSize   int
-	BundleSize int64
-	Skipped    []string
+	OutputPath      string   `json:"path"`
+	ProjectName     string   `json:"project_name"`
+	Branch          string   `json:"branch"`
+	RepoRoot        string   `json:"repository_root"`
+	FileCount       int      `json:"file_count"`
+	PromptCount     int      `json:"prompt_count"`
+	DiffSize        int      `json:"diff_size"`
+	BundleSize      int64    `json:"bundle_size"`
+	Skipped         []string `json:"skipped"`
+	SummaryProvider string   `json:"summary_provider"`
+	Commit         string   `json:"head_commit,omitempty"`
+	Dirty          bool     `json:"dirty"`
+}
+
+// human prints only when JSONOutput is false.
+func (cfg Config) human(format string, a ...any) {
+	if cfg.JSONOutput {
+		return
+	}
+	fmt.Printf(format, a...)
 }
 
 // Run executes the full export flow:
@@ -80,8 +101,8 @@ func Run(cfg Config) (*Result, error) {
 		return nil, fmt.Errorf("failed to determine repository root: %w", err)
 	}
 
-	fmt.Printf("✓ Detected Git repository\n")
-	fmt.Printf("  Root: %s\n", repoRoot)
+	cfg.human("✓ Detected Git repository\n")
+	cfg.human("  Root: %s\n", repoRoot)
 
 	gitMeta, err := cfg.GitProvider.Metadata()
 	if err != nil {
@@ -92,15 +113,15 @@ func Run(cfg Config) (*Result, error) {
 	if gitMeta.Dirty {
 		statusStr = "dirty"
 	}
-	fmt.Printf("  Branch: %s\n", gitMeta.CurrentBranch)
-	fmt.Printf("  HEAD:   %s\n", gitMeta.HeadCommit[:min(7, len(gitMeta.HeadCommit))])
-	fmt.Printf("  Status: %s\n", statusStr)
+	cfg.human("  Branch: %s\n", gitMeta.CurrentBranch)
+	cfg.human("  HEAD:   %s\n", gitMeta.HeadCommit[:min(7, len(gitMeta.HeadCommit))])
+	cfg.human("  Status: %s\n", statusStr)
 
 	prompts, err := cfg.PromptProvider.History()
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect prompt history: %w", err)
 	}
-	fmt.Printf("✓ Collected %d prompt entries\n", len(prompts))
+	cfg.human("✓ Collected %d prompt entries\n", len(prompts))
 
 	modifiedFiles, err := cfg.GitProvider.ModifiedFiles()
 	if err != nil {
@@ -111,13 +132,13 @@ func Run(cfg Config) (*Result, error) {
 	filtered, skipped := filterSecrets(allFiles)
 
 	if len(skipped) > 0 {
-		fmt.Printf("✓ Excluded %d file(s) matching secret patterns:\n", len(skipped))
+		cfg.human("✓ Excluded %d file(s) matching secret patterns:\n", len(skipped))
 		for _, s := range skipped {
-			fmt.Printf("  - %s\n", s)
+			cfg.human("  - %s\n", s)
 		}
 	}
 
-	fmt.Printf("✓ Collected %d file(s)\n", len(filtered))
+	cfg.human("✓ Collected %d file(s)\n", len(filtered))
 
 	diffBytes, err := cfg.GitProvider.Diff()
 	if err != nil {
@@ -147,13 +168,17 @@ func Run(cfg Config) (*Result, error) {
 		Diff:     diff,
 	}
 
-	fmt.Printf("✓ Built snapshot\n")
+	if skipped == nil {
+		skipped = []string{}
+	}
+
+	cfg.human("✓ Built snapshot\n")
 
 	summ, err := cfg.SummaryProvider.Summarize(snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate summary: %w", err)
 	}
-	fmt.Printf("✓ Generated summary (%s)\n", providerName(cfg.SummaryProvider))
+	cfg.human("✓ Generated summary (%s)\n", providerName(cfg.SummaryProvider))
 
 	b := bundle.Build(snapshot, summ)
 
@@ -169,15 +194,22 @@ func Run(cfg Config) (*Result, error) {
 
 	bundleSize, _ := archive.Size(outputPath)
 
-	fmt.Printf("\n✓ Bundle written: %s (%s)\n", outputPath, formatSize(bundleSize))
-	fmt.Printf("  Sections: %s\n", strings.Join(schema.RequiredFiles, ", "))
+	cfg.human("\n✓ Bundle written: %s (%s)\n", outputPath, formatSize(bundleSize))
+	cfg.human("  Sections: %s\n", strings.Join(schema.RequiredFiles, ", "))
 
 	return &Result{
-		OutputPath: outputPath,
-		FileCount:  len(filtered),
-		DiffSize:   len(diff),
-		BundleSize: bundleSize,
-		Skipped:    skipped,
+		OutputPath:      outputPath,
+		ProjectName:    projectName,
+		Branch:         gitMeta.CurrentBranch,
+		RepoRoot:       repoRoot,
+		FileCount:      len(filtered),
+		PromptCount:    len(prompts),
+		DiffSize:       len(diff),
+		BundleSize:     bundleSize,
+		Skipped:        skipped,
+		SummaryProvider: providerName(cfg.SummaryProvider),
+		Commit:         gitMeta.HeadCommit,
+		Dirty:          gitMeta.Dirty,
 	}, nil
 }
 
