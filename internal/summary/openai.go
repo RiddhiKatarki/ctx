@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 // OpenAIProvider generates summaries by calling an OpenAI-compatible

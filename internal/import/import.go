@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/context-handoff/ctx/internal/archive"
-	"github.com/context-handoff/ctx/internal/bundle"
+	"github.com/RiddhiKatarki/ctx/internal/archive"
+	"github.com/RiddhiKatarki/ctx/internal/bundle"
 )
 
 // Config holds options for the import operation.

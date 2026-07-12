@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 func TestValidateManifest_ValidVersion(t *testing.T) {

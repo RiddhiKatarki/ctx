@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 // GitProvider is the interface for retrieving Git state.

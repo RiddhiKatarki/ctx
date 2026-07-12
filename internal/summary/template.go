@@ -6,7 +6,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 // TemplateProvider generates a structured summary from the snapshot

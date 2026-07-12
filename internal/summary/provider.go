@@ -3,7 +3,7 @@ package summary
 import (
 	"fmt"
 
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 // SummaryProvider is the interface for generating project summaries.

@@ -3,7 +3,7 @@ package schema
 import (
 	"fmt"
 
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 const (

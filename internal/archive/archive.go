@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/context-handoff/ctx/internal/schema"
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/internal/schema"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 // EnsureCtxExtension ensures the given path ends with .ctx,

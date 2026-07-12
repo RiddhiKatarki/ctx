@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/context-handoff/ctx/internal/archive"
-	"github.com/context-handoff/ctx/internal/bundle"
-	"github.com/context-handoff/ctx/internal/git"
-	"github.com/context-handoff/ctx/internal/providers"
-	"github.com/context-handoff/ctx/internal/schema"
-	"github.com/context-handoff/ctx/internal/summary"
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/internal/archive"
+	"github.com/RiddhiKatarki/ctx/internal/bundle"
+	"github.com/RiddhiKatarki/ctx/internal/git"
+	"github.com/RiddhiKatarki/ctx/internal/providers"
+	"github.com/RiddhiKatarki/ctx/internal/schema"
+	"github.com/RiddhiKatarki/ctx/internal/summary"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 // Config holds all dependencies and options for the export operation.

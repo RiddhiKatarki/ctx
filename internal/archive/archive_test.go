@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/context-handoff/ctx/internal/schema"
+	"github.com/RiddhiKatarki/ctx/internal/schema"
 )
 
 func TestEnsureCtxExtension_AlreadyHasExtension(t *testing.T) {

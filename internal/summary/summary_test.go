@@ -3,7 +3,7 @@ package summary
 import (
 	"testing"
 
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 func makeTestSnapshot() types.Snapshot {

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/context-handoff/ctx/internal/git"
-	"github.com/context-handoff/ctx/internal/providers"
-	"github.com/context-handoff/ctx/internal/summary"
+	"github.com/RiddhiKatarki/ctx/internal/git"
+	"github.com/RiddhiKatarki/ctx/internal/providers"
+	"github.com/RiddhiKatarki/ctx/internal/summary"
 )
 
 func initTestRepo(t *testing.T) string {

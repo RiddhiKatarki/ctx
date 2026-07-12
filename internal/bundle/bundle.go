@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/context-handoff/ctx/internal/schema"
-	"github.com/context-handoff/ctx/internal/summary"
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/internal/schema"
+	"github.com/RiddhiKatarki/ctx/internal/summary"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 // Bundle is the in-memory representation of all archive contents.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 // PromptProvider is the interface for retrieving prompt history.

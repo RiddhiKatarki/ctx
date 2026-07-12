@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/context-handoff/ctx/internal/schema"
-	"github.com/context-handoff/ctx/pkg/types"
+	"github.com/RiddhiKatarki/ctx/internal/schema"
+	"github.com/RiddhiKatarki/ctx/pkg/types"
 )
 
 func makeTestSnapshot() types.Snapshot {

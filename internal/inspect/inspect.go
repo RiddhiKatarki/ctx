@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/context-handoff/ctx/internal/archive"
-	"github.com/context-handoff/ctx/internal/summary"
+	"github.com/RiddhiKatarki/ctx/internal/archive"
+	"github.com/RiddhiKatarki/ctx/internal/summary"
 )
 
 // Config holds options for the inspect operation.

@@ -1,4 +1,4 @@
-module github.com/context-handoff/ctx
+module github.com/RiddhiKatarki/ctx
 
 go 1.22.5
 
