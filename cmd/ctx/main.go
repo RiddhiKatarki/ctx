@@ -118,14 +118,15 @@ Always emits JSON — this command is built for tooling consumption.`,
 
 // Export flags
 var (
-	exportOutput      string
-	exportProjectName string
-	exportPromptsFile string
-	exportExtraFiles  string
-	exportSummaryProv string
-	exportAPIKey      string
-	exportAPIBaseURL  string
-	exportModel       string
+	exportOutput        string
+	exportProjectName   string
+	exportPromptsFile   string
+	exportPromptsSource string
+	exportExtraFiles    string
+	exportSummaryProv   string
+	exportAPIKey        string
+	exportAPIBaseURL    string
+	exportModel         string
 )
 
 // Import flags
@@ -146,6 +147,7 @@ func init() {
 	exportCmd.Flags().StringVarP(&exportOutput, "output", "o", "project.ctx", "output bundle path")
 	exportCmd.Flags().StringVar(&exportProjectName, "project-name", "", "override project name (default: repo dir name)")
 	exportCmd.Flags().StringVar(&exportPromptsFile, "prompts", "", "path to JSON file with prompt history")
+	exportCmd.Flags().StringVar(&exportPromptsSource, "prompts-source", "auto", "prompt source: auto, file, claudecode, opencode, cursor, aider, mock")
 	exportCmd.Flags().StringVar(&exportExtraFiles, "files", "", "comma-separated extra file paths to include")
 	exportCmd.Flags().StringVar(&exportSummaryProv, "summary-provider", "template", "summary provider: template (default) or openai")
 	exportCmd.Flags().StringVar(&exportAPIKey, "api-key", "", "API key for LLM summary provider")
@@ -171,9 +173,18 @@ func runExport(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	promptProv := providers.NewPromptProvider(providers.Options{
+	promptSource := providers.Source(exportPromptsSource)
+	if promptSource == "" {
+		promptSource = providers.SourceAuto
+	}
+	promptProv, err := providers.NewPromptProvider(providers.Options{
+		Source:      promptSource,
 		PromptsFile: exportPromptsFile,
+		WorkingDir:  wd,
 	})
+	if err != nil {
+		return exitError(clierr.CodeUser, "prompt provider configuration error", err)
+	}
 
 	summProv, err := summary.NewSummaryProvider(summary.Options{
 		Provider:   exportSummaryProv,

@@ -82,15 +82,40 @@ func TestFilePromptProvider_InvalidRole(t *testing.T) {
 }
 
 func TestNewPromptProvider_Mock(t *testing.T) {
-	p := NewPromptProvider(Options{})
+	// Use a tmp dir that's known to have no provider data so
+	// auto-detection falls back to MockPromptProvider.
+	p, err := NewPromptProvider(Options{
+		OverrideDirs: map[string]string{
+			"opencode":    t.TempDir(),
+			"claudecode":  t.TempDir(),
+			"cursor":      t.TempDir(),
+			"aider":       t.TempDir(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if _, ok := p.(*MockPromptProvider); !ok {
-		t.Error("expected MockPromptProvider when no file specified")
+		t.Errorf("expected MockPromptProvider when auto-detection finds nothing, got %T", p)
+	}
+}
+
+func TestNewPromptProvider_Mock_Explicit(t *testing.T) {
+	p, err := NewPromptProvider(Options{Source: SourceMock})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := p.(*MockPromptProvider); !ok {
+		t.Errorf("expected MockPromptProvider when source=mock, got %T", p)
 	}
 }
 
 func TestNewPromptProvider_File(t *testing.T) {
-	p := NewPromptProvider(Options{PromptsFile: "prompts.json"})
+	p, err := NewPromptProvider(Options{Source: SourceFile, PromptsFile: "prompts.json"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if _, ok := p.(*FilePromptProvider); !ok {
-		t.Error("expected FilePromptProvider when file specified")
+		t.Error("expected FilePromptProvider when source=file specified")
 	}
 }

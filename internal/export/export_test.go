@@ -12,6 +12,15 @@ import (
 	"github.com/RiddhiKatarki/ctx/internal/summary"
 )
 
+func mustPromptProvider(t *testing.T, opts providers.Options) providers.PromptProvider {
+	t.Helper()
+	pp, err := providers.NewPromptProvider(opts)
+	if err != nil {
+		t.Fatalf("NewPromptProvider: %v", err)
+	}
+	return pp
+}
+
 func initTestRepo(t *testing.T) string {
 	t.Helper()
 
@@ -72,7 +81,7 @@ func TestRun_FullExportFlow(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
 		SummaryProvider: func() *summary.TemplateProvider { return summary.NewTemplateProvider() }(),
 	}
 
@@ -123,7 +132,7 @@ func TestRun_WithExtraFiles(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
 		SummaryProvider: summary.NewTemplateProvider(),
 		ExtraFiles:      []string{"notes.md"},
 	}
@@ -158,7 +167,7 @@ func TestRun_SecretExclusion(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
 		SummaryProvider: summary.NewTemplateProvider(),
 		ExtraFiles:      []string{".env", "README.md"},
 	}
@@ -248,7 +257,7 @@ func TestRun_WithFilePrompts(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{PromptsFile: promptsPath}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{Source: providers.SourceFile, PromptsFile: promptsPath}),
 		SummaryProvider: summary.NewTemplateProvider(),
 	}
 
@@ -282,7 +291,7 @@ func TestRun_JSONOutput_FlagSet(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
 		SummaryProvider: summary.NewTemplateProvider(),
 		JSONOutput:      true,
 	}
@@ -377,7 +386,7 @@ func TestRun_JSONOutput_SkippedList(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
 		SummaryProvider: summary.NewTemplateProvider(),
 		ExtraFiles:      []string{".env"},
 		JSONOutput:      true,

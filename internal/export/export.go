@@ -101,7 +101,11 @@ func Run(cfg Config) (*Result, error) {
 		cfg.GitProvider = git.NewCLIGitProvider(cfg.WorkingDir)
 	}
 	if cfg.PromptProvider == nil {
-		cfg.PromptProvider = providers.NewPromptProvider(providers.Options{})
+		pp, err := providers.NewPromptProvider(providers.Options{Source: providers.SourceAuto})
+		if err != nil {
+			return nil, err
+		}
+		cfg.PromptProvider = pp
 	}
 	if cfg.SummaryProvider == nil {
 		sp, err := summary.NewSummaryProvider(summary.Options{})
