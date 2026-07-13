@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/RiddhiKatarki/ctx/internal/schema"
@@ -24,7 +25,9 @@ func EnsureCtxExtension(path string) string {
 }
 
 // Create writes a ZIP archive with .ctx extension containing the given files.
-// The files map is {filename: content}.
+// The files map is {filename: content}. All entries are written; the
+// caller is responsible for ensuring the seven RequiredFiles are present
+// (basic validation happens during Extract / Deserialize rather than here).
 func Create(path string, files map[string][]byte) error {
 	path = EnsureCtxExtension(path)
 
@@ -40,6 +43,8 @@ func Create(path string, files map[string][]byte) error {
 
 	zw := zip.NewWriter(out)
 
+	// Write required files first so that the smallest well-formed bundle
+	// is always prefixed by the canonical entries.
 	for _, filename := range schema.RequiredFiles {
 		content, ok := files[filename]
 		if !ok {
@@ -54,11 +59,41 @@ func Create(path string, files map[string][]byte) error {
 		}
 	}
 
+	// Write any additional entries (e.g. contents/<path>) in a
+	// deterministic order: alphabetical by filename.
+	var extras []string
+	for name := range files {
+		if isRequired(name) {
+			continue
+		}
+		extras = append(extras, name)
+	}
+	sort.Strings(extras)
+	for _, name := range extras {
+		w, err := zw.Create(name)
+		if err != nil {
+			return fmt.Errorf("failed to create zip entry %s: %w", name, err)
+		}
+		if _, err := w.Write(files[name]); err != nil {
+			return fmt.Errorf("failed to write zip entry %s: %w", name, err)
+		}
+	}
+
 	if err := zw.Close(); err != nil {
 		return fmt.Errorf("failed to close archive: %w", err)
 	}
 
 	return nil
+}
+
+// isRequired reports whether name is one of the seven canonical bundle entries.
+func isRequired(name string) bool {
+	for _, r := range schema.RequiredFiles {
+		if r == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Extract reads a .ctx ZIP archive and returns a map of {filename: content}.
@@ -99,12 +134,14 @@ func Extract(path string) (map[string][]byte, error) {
 type PeekResult struct {
 	Manifest *types.Manifest
 	Metadata *types.Metadata
+	Git      *types.GitMetadata
 	Summary  []byte
+	Diff     []byte
 	Files    []string
 }
 
 // Peek opens a .ctx archive and reads only the files needed for inspection:
-// manifest.json, metadata.json, summary.md, and files.json.
+// manifest.json, metadata.json, git.json, summary.md, files.json, and patch.diff.
 // This avoids full extraction for fast display.
 func Peek(path string) (*PeekResult, error) {
 	r, err := zip.OpenReader(path)
@@ -139,12 +176,30 @@ func Peek(path string) (*PeekResult, error) {
 			}
 			result.Metadata = &metadata
 
+		case schema.GitFile:
+			content, err := readZipEntry(f)
+			if err != nil {
+				return nil, err
+			}
+			var git types.GitMetadata
+			if err := json.Unmarshal(content, &git); err != nil {
+				return nil, fmt.Errorf("failed to parse git: %w", err)
+			}
+			result.Git = &git
+
 		case schema.SummaryFile:
 			content, err := readZipEntry(f)
 			if err != nil {
 				return nil, err
 			}
 			result.Summary = content
+
+		case schema.PatchFile:
+			content, err := readZipEntry(f)
+			if err != nil {
+				return nil, err
+			}
+			result.Diff = content
 
 		case schema.FilesFile:
 			content, err := readZipEntry(f)

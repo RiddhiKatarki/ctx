@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ func TestBuild_CreatesValidBundle(t *testing.T) {
 	snapshot := makeTestSnapshot()
 	summ := makeTestSummary()
 
-	b := Build(snapshot, summ)
+	b := Build(snapshot, summ, nil)
 
 	if b.Manifest.Version != schema.BundleVersion {
 		t.Errorf("expected version %d, got %d", schema.BundleVersion, b.Manifest.Version)
@@ -67,7 +68,7 @@ func TestSerialize_Deserialize_RoundTrip(t *testing.T) {
 	snapshot := makeTestSnapshot()
 	summ := makeTestSummary()
 
-	b := Build(snapshot, summ)
+	b := Build(snapshot, summ, nil)
 
 	files, err := b.Serialize()
 	if err != nil {
@@ -133,7 +134,7 @@ func TestSerialize_EmptyFiles(t *testing.T) {
 	snapshot.Files = nil
 	summ := makeTestSummary()
 
-	b := Build(snapshot, summ)
+	b := Build(snapshot, summ, nil)
 	files, err := b.Serialize()
 	if err != nil {
 		t.Fatalf("Serialize failed: %v", err)
@@ -141,5 +142,127 @@ func TestSerialize_EmptyFiles(t *testing.T) {
 
 	if string(files[schema.FilesFile]) != "[]" {
 		t.Errorf("expected empty files list '[]', got %s", string(files[schema.FilesFile]))
+	}
+}
+
+func TestSerialize_WithContents(t *testing.T) {
+	snapshot := makeTestSnapshot()
+	summ := makeTestSummary()
+
+	contents := map[string][]byte{
+		"main.go":  []byte("package main\n"),
+		"auth.go":  []byte("package auth\n"),
+		"README.md": []byte("# Test\n"),
+	}
+
+	b := Build(snapshot, summ, contents)
+	files, err := b.Serialize()
+	if err != nil {
+		t.Fatalf("Serialize failed: %v", err)
+	}
+
+	// Manifest must say includes_contents=true
+	if !b.Manifest.IncludesContents {
+		t.Error("expected Manifest.IncludesContents=true when contents added")
+	}
+
+	if !strings.Contains(string(files[schema.ManifestFile]), `"includes_contents": true`) {
+		t.Errorf("manifest.json missing includes_contents field, got: %s", string(files[schema.ManifestFile]))
+	}
+
+	// Each entry embedded under contents/<path>
+	for rel, data := range contents {
+		key := schema.ContentsPrefix + rel
+		got, ok := files[key]
+		if !ok {
+			t.Errorf("missing contents entry: %s", key)
+			continue
+		}
+		if string(got) != string(data) {
+			t.Errorf("content mismatch for %s: got %q want %q", key, got, data)
+		}
+	}
+
+	if _, ok := files["contents/../escape"]; ok {
+		t.Error("path traversal in contents should be sanitised")
+	}
+}
+
+func TestSerialize_ContentsWithoutPathTraversal(t *testing.T) {
+	snapshot := makeTestSnapshot()
+	summ := makeTestSummary()
+
+	contents := map[string][]byte{
+		"../escape.txt": []byte("malicious"),
+	}
+
+	b := Build(snapshot, summ, contents)
+	files, err := b.Serialize()
+	if err != nil {
+		t.Fatalf("Serialize failed: %v", err)
+	}
+
+	// fp.Clean(sep + "../escape.txt") = "/escape.txt" — strip leading
+	// slash so the resulting key is "contents/escape.txt", not
+	// "contents/..".
+	if _, ok := files["contents/../escape.txt"]; ok {
+		t.Error("path traversal was not normalised")
+	}
+	if _, ok := files["contents/escape.txt"]; !ok {
+		t.Error("expected normalised key contents/escape.txt")
+	}
+}
+
+func TestDeserialize_ContentsRoundTrip(t *testing.T) {
+	snapshot := makeTestSnapshot()
+	summ := makeTestSummary()
+
+	contents := map[string][]byte{
+		"main.go": []byte("package main\nfunc main() {}\n"),
+	}
+
+	b := Build(snapshot, summ, contents)
+	files, err := b.Serialize()
+	if err != nil {
+		t.Fatalf("Serialize failed: %v", err)
+	}
+
+	restored, err := Deserialize(files)
+	if err != nil {
+		t.Fatalf("Deserialize failed: %v", err)
+	}
+
+	if !restored.Manifest.IncludesContents {
+		t.Error("expected restored manifest to include contents flag")
+	}
+
+	if len(restored.Contents) != 1 {
+		t.Fatalf("expected 1 content entry, got %d", len(restored.Contents))
+	}
+	if string(restored.Contents["main.go"]) != string(contents["main.go"]) {
+		t.Errorf("content mismatch")
+	}
+}
+
+func TestDeserialize_NoContents(t *testing.T) {
+	snapshot := makeTestSnapshot()
+	summ := makeTestSummary()
+
+	b := Build(snapshot, summ, nil)
+	files, err := b.Serialize()
+	if err != nil {
+		t.Fatalf("Serialize failed: %v", err)
+	}
+
+	restored, err := Deserialize(files)
+	if err != nil {
+		t.Fatalf("Deserialize failed: %v", err)
+	}
+
+	if restored.Manifest.IncludesContents {
+		t.Error("manifest should not include contents when empty")
+	}
+	if len(restored.Contents) != 0 {
+		t.Errorf("expected no contents entries, got %d", len(restored.Contents))
 	}
 }

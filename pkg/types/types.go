@@ -3,10 +3,12 @@ package types
 import "time"
 
 // Manifest describes the bundle version and provenance.
+// IncludesContents is an optional V2 field; V1 readers ignore it.
 type Manifest struct {
-	Version   int       `json:"version"`
-	CreatedAt time.Time `json:"created_at"`
-	Tool      string    `json:"tool"`
+	Version          int       `json:"version"`
+	CreatedAt        time.Time `json:"created_at"`
+	Tool             string    `json:"tool"`
+	IncludesContents bool      `json:"includes_contents,omitempty"`
 }
 
 // Metadata holds general project metadata captured at export time.

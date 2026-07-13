@@ -1,6 +1,8 @@
 package export
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +12,15 @@ import (
 	"github.com/RiddhiKatarki/ctx/internal/providers"
 	"github.com/RiddhiKatarki/ctx/internal/summary"
 )
+
+func mustPromptProvider(t *testing.T, opts providers.Options) providers.PromptProvider {
+	t.Helper()
+	pp, err := providers.NewPromptProvider(opts)
+	if err != nil {
+		t.Fatalf("NewPromptProvider: %v", err)
+	}
+	return pp
+}
 
 func initTestRepo(t *testing.T) string {
 	t.Helper()
@@ -71,7 +82,7 @@ func TestRun_FullExportFlow(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
 		SummaryProvider: func() *summary.TemplateProvider { return summary.NewTemplateProvider() }(),
 	}
 
@@ -122,7 +133,7 @@ func TestRun_WithExtraFiles(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
 		SummaryProvider: summary.NewTemplateProvider(),
 		ExtraFiles:      []string{"notes.md"},
 	}
@@ -157,7 +168,7 @@ func TestRun_SecretExclusion(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
 		SummaryProvider: summary.NewTemplateProvider(),
 		ExtraFiles:      []string{".env", "README.md"},
 	}
@@ -247,7 +258,7 @@ func TestRun_WithFilePrompts(t *testing.T) {
 		OutputPath:      outputPath,
 		WorkingDir:      dir,
 		GitProvider:     git.NewCLIGitProvider(dir),
-		PromptProvider:  providers.NewPromptProvider(providers.Options{PromptsFile: promptsPath}),
+		PromptProvider:  mustPromptProvider(t, providers.Options{Source: providers.SourceFile, PromptsFile: promptsPath}),
 		SummaryProvider: summary.NewTemplateProvider(),
 	}
 
@@ -270,5 +281,218 @@ func TestRun_DefaultProviders(t *testing.T) {
 	_, err := Run(cfg)
 	if err != nil {
 		t.Fatalf("Run with default providers failed: %v", err)
+	}
+}
+
+func TestRun_JSONOutput_FlagSet(t *testing.T) {
+	dir := initTestRepo(t)
+
+	outputPath := filepath.Join(dir, "json-test.ctx")
+	cfg := Config{
+		OutputPath:      outputPath,
+		WorkingDir:      dir,
+		GitProvider:     git.NewCLIGitProvider(dir),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
+		SummaryProvider: summary.NewTemplateProvider(),
+		JSONOutput:      true,
+	}
+
+	result, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	if result.OutputPath != outputPath {
+		t.Errorf("expected OutputPath %s, got %s", outputPath, result.OutputPath)
+	}
+	if result.FileCount < 1 {
+		t.Errorf("expected at least 1 file, got %d", result.FileCount)
+	}
+	if result.SummaryProvider != "template" {
+		t.Errorf("expected summary_provider template, got %s", result.SummaryProvider)
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("JSON marshal failed: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty JSON output")
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("JSON unmarshal failed: %v", err)
+	}
+
+	expectedFields := []string{
+		"path", "project_name", "branch", "repository_root",
+		"file_count", "diff_size", "bundle_size", "summary_provider",
+		"head_commit", "dirty",
+	}
+	for _, f := range expectedFields {
+		if _, ok := parsed[f]; !ok {
+			t.Errorf("expected field %q in JSON output", f)
+		}
+	}
+}
+
+func TestResult_JSONTags_RoundTrip(t *testing.T) {
+	r := &Result{
+		OutputPath:      "test.ctx",
+		ProjectName:     "p",
+		Branch:          "main",
+		FileCount:       3,
+		PromptCount:     2,
+		DiffSize:        100,
+		BundleSize:      5000,
+		Skipped:        []string{".env", "id_rsa"},
+		SummaryProvider: "template",
+		Commit:          "abc",
+		Dirty:           true,
+	}
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+
+	if parsed["skipped"] == nil {
+		t.Error("expected skipped field")
+	}
+
+	skipped, ok := parsed["skipped"].([]any)
+	if !ok || len(skipped) != 2 {
+		t.Errorf("expected skipped array of length 2, got %v", parsed["skipped"])
+	}
+}
+
+func TestRun_JSONOutput_SkippedList(t *testing.T) {
+	dir := initTestRepo(t)
+
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("API_KEY=secret"), 0644); err != nil {
+		t.Fatalf("failed to write .env: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "skip-json.ctx")
+	cfg := Config{
+		OutputPath:      outputPath,
+		WorkingDir:      dir,
+		GitProvider:     git.NewCLIGitProvider(dir),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
+		SummaryProvider: summary.NewTemplateProvider(),
+		ExtraFiles:      []string{".env"},
+		JSONOutput:      true,
+	}
+
+	result, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if len(result.Skipped) != 1 {
+		t.Errorf("expected 1 skipped file, got %d", len(result.Skipped))
+	}
+	if result.Skipped[0] != ".env" {
+		t.Errorf("expected .env to be skipped, got %s", result.Skipped[0])
+	}
+
+	// Verify JSON marshals the skipped field correctly even in JSON mode
+	data, _ := json.Marshal(result.Skipped)
+	var parsed []string
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(parsed) != 1 || parsed[0] != ".env" {
+		t.Errorf("expected [\"\\u002eenv\"], got %v", parsed)
+	}
+}
+
+func TestRun_IncludeContents(t *testing.T) {
+	dir := initTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("extra contents"), 0644); err != nil {
+		t.Fatalf("write extra: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "contents.ctx")
+	cfg := Config{
+		OutputPath:      outputPath,
+		WorkingDir:      dir,
+		GitProvider:     git.NewCLIGitProvider(dir),
+		PromptProvider:  mustPromptProvider(t, providers.Options{}),
+		SummaryProvider: summary.NewTemplateProvider(),
+		IncludeContents: true,
+	}
+
+	result, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if !result.IncludesContents {
+		t.Error("expected IncludesContents=true")
+	}
+
+	if result.ContentsCount < 1 {
+		t.Errorf("expected at least 1 file embedded, got %d", result.ContentsCount)
+	}
+
+	// Verify the contents directory exists in the produced bundle.
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read bundle: %v", err)
+	}
+	if !bytes.Contains(data, []byte("contents/")) {
+		t.Error("expected bundle to contain entries under contents/")
+	}
+}
+
+func TestRun_IncludeContents_ThresholdSkips(t *testing.T) {
+	dir := initTestRepo(t)
+	// Create a file whose size clearly exceeds 1 KiB threshold.
+	big := make([]byte, 4096)
+	for i := range big {
+		big[i] = 'X'
+	}
+	if err := os.WriteFile(filepath.Join(dir, "big.txt"), big, 0644); err != nil {
+		t.Fatalf("write big: %v", err)
+	}
+
+	outputPath := filepath.Join(dir, "threshold.ctx")
+	cfg := Config{
+		OutputPath:        outputPath,
+		WorkingDir:        dir,
+		GitProvider:       git.NewCLIGitProvider(dir),
+		PromptProvider:    mustPromptProvider(t, providers.Options{}),
+		SummaryProvider:   summary.NewTemplateProvider(),
+		IncludeContents:   true,
+		ContentsThreshold: 1024,
+		ExtraFiles:        []string{"big.txt"},
+	}
+
+	result, err := Run(cfg)
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if len(result.ContentsSkipped) == 0 {
+		t.Errorf("expected at least one file to be skipped due to threshold")
+	}
+	skippedBig := false
+	for _, s := range result.ContentsSkipped {
+		if s == "big.txt" {
+			skippedBig = true
+		}
+	}
+	if !skippedBig {
+		t.Errorf("expected big.txt to be skipped, got: %v", result.ContentsSkipped)
 	}
 }
