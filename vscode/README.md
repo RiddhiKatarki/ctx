@@ -1,99 +1,113 @@
 # ctx — Context Handoff
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+Ever finished a coding session with an AI assistant, then had to spend 30 minutes explaining to a teammate (or your future self) what you were working on? **Context Handoff fixes that.**
 
-> Cut AI-assisted development handoff time from 30–45 minutes to under 5–10 minutes.
+`ctx` captures the full state of an AI-assisted development session — what you were building, what's done, what's left, what files to look at first, what you already tried — and packs it into a single portable `.ctx` file. Hand it to a teammate, drop it in a chat, or save it for Monday morning. Anyone (or any AI agent) can pick up exactly where you left off in under 5 minutes.
 
-`ctx` exports the working context of an AI-assisted development session — git state, modified files, prompt history, and a structured AI summary — into a portable `.ctx` bundle that another developer (or another AI agent) can pick up with minimal onboarding.
+## What's in a `.ctx` bundle?
 
-This extension wraps the [`ctx` CLI](https://github.com/RiddhiKatarki/ctx) with a native VS Code experience: command-palette flows, a tree view of bundles in your workspace, rich WebView panels for inspecting summaries, and integrated `git apply` for handing off patches.
+A `.ctx` file is a small ZIP archive containing:
 
-## Features
+| File | What it captures |
+|---|---|
+| `summary.md` | A 9-section project summary (see below) |
+| `git.json` | Branch, HEAD commit, dirty flag, remote URL, current tag |
+| `patch.diff` | Your uncommitted changes as a `git diff` |
+| `files.json` | List of modified files |
+| `prompts.json` | Recent prompt history from your AI assistant |
+| `metadata.json` | Project name, OS, timestamps |
+| `manifest.json` | Bundle format version and provenance |
 
-- **Export** the current workspace into a `.ctx` bundle via a guided multi-step flow (prompt source, summary provider, secret scan, content embedding).
-- **Inspect** a bundle in a rich WebView that renders all 9 canonical summary sections (Current Objective, Completed Work, Remaining Tasks, Known Bugs, Architecture Decisions, Files To Read First, Previous Failed Approaches, Suggested Next Prompt, Estimated Reading Time).
-- **Import** bundles with optional extraction and a one-click `git apply` of the bundled patch.
-- **Bundle tree** in the activity bar lists every `.ctx` file in the workspace with branch, file count, and dirty indicator.
-- **Prompt providers** auto-detected: Claude Code, OpenCode, Cursor (with SQLite extraction), Aider, or your own JSON file.
-- **Local-first**: no cloud dependencies, no user accounts, no telemetry. The only network call is to your own OpenAI-compatible endpoint if you opt into the LLM summary provider.
+### The 9-section project summary
 
-## Quick start
+The heart of a bundle. Generated from your git state and prompt history (either locally or via an LLM):
 
-1. Open a git repository in VS Code.
-2. Run **ctx: Export Workspace Context** from the Command Palette.
-3. Pick a prompt source (or accept *Auto-detect*), choose the template or OpenAI summary provider, and toggle secret-scan / content-embedding.
-4. The bundle appears in your explorer with a `CTX` badge and in the **Context Bundles** tree.
+1. **Current Objective** — what you're trying to build
+2. **Completed Work** — what's already done
+3. **Remaining Tasks** — what's left
+4. **Known Bugs** — issues to watch out for
+5. **Architecture Decisions** — context for the choices made
+6. **Files To Read First** — where to look first
+7. **Previous Failed Approaches** — what didn't work (so you don't repeat it)
+8. **Suggested Next Prompt** — a ready-to-use prompt to continue
+9. **Estimated Reading Time** — how long onboarding will take
 
-To consume a bundle a teammate sent you:
+## What can I do with this extension?
 
-1. Run **ctx: Import Bundle...** (or right-click a `.ctx` file in the explorer).
-2. Choose *Validate only* or *Extract to folder*.
-3. After extraction, click *Apply patch* to run `git apply patch.diff` in the integrated terminal.
+### Export your current session
+
+Run **ctx: Export Workspace Context** from the Command Palette. A guided flow walks you through:
+
+- **Prompt source** — auto-detect (Claude Code, OpenCode, Cursor, Aider), load from a JSON file, or skip
+- **Summary provider** — local template (offline, instant) or any OpenAI-compatible LLM (OpenAI, Surplus, Ollama, vLLM, Venice) for a richer summary
+- **Secret scanning** — redact API keys, tokens, and private keys before bundling
+- **Content embedding** — optionally embed file contents so the bundle is fully self-contained
+
+The resulting `project.ctx` lands in your workspace with a `CTX` badge, ready to share.
+
+### Inspect a bundle
+
+Right-click any `.ctx` file → **ctx: Inspect Bundle**. The full 9-section summary opens in a Markdown preview pane — readable, copyable, and searchable.
+
+### Import a bundle
+
+Right-click → **ctx: Import Bundle...**. Choose to validate-only or extract to a folder. After extraction, a one-click **Apply patch** button runs `git apply patch.diff` in the integrated terminal, so you can pick up your teammate's uncommitted changes verbatim.
+
+### Browse bundles in your workspace
+
+The activity bar gets a new **ctx** icon. Click it to see every `.ctx` file in your workspace with branch, file count, and dirty indicator at a glance. Click a bundle to inspect it.
 
 ## Commands
 
-| Command | Description |
+| Command | What it does |
 |---|---|
-| `ctx: Export Workspace Context` | Capture the current state into a `.ctx` bundle |
-| `ctx: Import Bundle...` | Validate and optionally extract a `.ctx` bundle |
-| `ctx: Inspect Bundle` | Open the 9-section summary in a WebView |
-| `ctx: Show Bundle Metadata` | Open manifest/metadata/git/files in a WebView |
+| `ctx: Export Workspace Context` | Capture current state into a `.ctx` bundle |
+| `ctx: Import Bundle...` | Validate / extract a `.ctx` bundle |
+| `ctx: Inspect Bundle` | Open the 9-section summary |
+| `ctx: Show Bundle Metadata` | Show manifest / metadata / git / files |
 | `ctx: Apply Patch from Bundle` | `git apply` the `patch.diff` from a bundle |
+| `ctx: Update OpenAI API Key` | Edit the stored API key |
+| `ctx: Refresh Bundles` | Re-scan the workspace for `.ctx` files |
 
-All commands are also available via:
-- Explorer context menu on `.ctx` files
-- Editor title bar when a `.ctx` file is open
-- Inline buttons on bundle tree rows
+Commands surface in the Command Palette, the explorer context menu on `.ctx` files, the editor title bar, and inline on bundle tree rows.
 
 ## Configuration
 
-| Key | Default | Description |
+| Setting | Default | Description |
 |---|---|---|
-| `ctx.summaryProvider` | `"template"` | `"template"` (offline) or `"openai"` |
-| `ctx.openaiBaseUrl` | `"https://api.openai.com/v1"` | Any OpenAI-compatible endpoint (Venice, Ollama, vLLM, etc.) |
-| `ctx.openaiModel` | `"gpt-4o"` | Model name when using the `openai` provider |
+| `ctx.summaryProvider` | `"template"` | `"template"` (offline) or `"openai"` (LLM) |
+| `ctx.openaiBaseUrl` | `"https://api.openai.com/v1"` | Any OpenAI-compatible endpoint |
+| `ctx.openaiModel` | `"gpt-4o"` | Model name for the `openai` provider |
 | `ctx.defaultOutputName` | `"project.ctx"` | Default bundle filename |
 | `ctx.defaultOutdir` | `".ctx"` | Default extraction directory on import |
-| `ctx.secretScanEnabled` | `true` | Scan file contents for secrets and redact them before bundling |
-| `ctx.includeContents` | `false` | Embed file contents for a self-contained bundle |
+| `ctx.secretScanEnabled` | `true` | Scan and redact secrets before bundling |
+| `ctx.includeContents` | `false` | Embed file contents for self-contained bundles |
 | `ctx.contentsThreshold` | `262144` | Max bytes per embedded file (256 KiB) |
 | `ctx.showNotifications` | `"errorsOnly"` | `"all"`, `"errorsOnly"`, or `"none"` |
 
-The OpenAI API key is **never** stored in `settings.json`. On first use of the `openai` provider, the extension prompts for it and stores it via VS Code's SecretStorage.
+**API key handling:** Your OpenAI-compatible API key is stored via VS Code's SecretStorage — never in `settings.json`, never in git. Use the `ctx: Update OpenAI API Key` command to replace or delete it.
 
-## Bundle format
+## Custom LLM providers
 
-A `.ctx` file is a ZIP archive containing 7 canonical files:
+The summary provider works with **any** OpenAI-compatible endpoint. Some examples:
 
-```
-manifest.json    # Bundle version and provenance
-metadata.json    # Project name, branch, OS, timestamps
-git.json         # Branch, HEAD, dirty flag, remote URL, tag
-summary.md       # 9-section structured project summary
-prompts.json     # Recent prompt history
-files.json       # List of relevant project files
-patch.diff       # Uncommitted changes (git diff)
-```
+- **OpenAI** — `https://api.openai.com/v1` · model `gpt-4o`
+- **Surplus** — `https://api.surplusintelligence.ai/v1` · model `glm-5.2`
+- **Ollama (local)** — `http://localhost:11434/v1` · model `llama3`
+- **vLLM** — `http://localhost:8000/v1` · model of your choice
 
-Self-contained bundles additionally embed file contents under `contents/`.
+When you run export and pick the OpenAI-compatible provider, you'll be prompted for the base URL and model name inline — no need to edit settings first.
 
-## Architecture
+## Privacy
 
-This extension ships prebuilt `ctx` binaries for **linux, darwin, and windows on amd64 and arm64** inside the `.vsix`. At runtime it spawns the binary for the current platform and consumes its machine-readable `--json` and `--stream` output.
+- **Local-first.** The only network call is to your own LLM endpoint, and only if you opt into the LLM summary provider.
+- **No telemetry.** The extension does not phone home and collects no usage data.
+- **No accounts.** No sign-up, no login, no cloud service.
+- **Secret-aware.** Files matching secret patterns (`.env`, `*.pem`, `id_rsa`, API keys, tokens) are excluded or redacted by default.
 
-The CLI's [stable exit-code contract](https://github.com/RiddhiKatarki/ctx/blob/main/internal/clierr/clierr.go) is the foundation of the extension's error UX:
+## How it works
 
-| Exit | Code | Extension behavior |
-|---|---|---|
-| 0 | — | success |
-| 1 | `user_error` | warning notification |
-| 2 | `system_error` | error notification + *Open Logs* action |
-| 3 | `invalid_bundle` | error notification with bundle-specific copy |
-
-## Telemetry
-
-None. The extension does not phone home and does not collect any usage data.
+This extension ships prebuilt `ctx` binaries for **Linux, macOS, and Windows on amd64 and arm64** inside the `.vsix` (~5 MB per platform). At runtime it spawns the binary for the current platform and consumes its machine-readable JSON output — no Node-side reimplementation of git, secret scanning, or bundle I/O. Behavior matches the [`ctx` CLI](https://github.com/RiddhiKatarki/ctx) exactly.
 
 ## License
 
