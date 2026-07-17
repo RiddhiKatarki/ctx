@@ -126,12 +126,34 @@ async function collectExportOptions(
   args.push('--summary-provider', providerValue);
 
   if (providerValue === 'openai') {
+    // Let the user override the endpoint and model per-export. Defaults
+    // come from settings so the common case (OpenAI) needs no typing.
+    const baseUrl = await vscode.window.showInputBox({
+      title: 'ctx export — API base URL',
+      prompt: 'OpenAI-compatible endpoint (appends /chat/completions)',
+      value: settings.openaiBaseUrl,
+      placeHolder: 'https://api.openai.com/v1',
+      ignoreFocusOut: true,
+      validateInput: (v) => (v.trim().length === 0 ? 'URL cannot be empty' : undefined),
+    });
+    if (baseUrl === undefined) return undefined;
+
+    const model = await vscode.window.showInputBox({
+      title: 'ctx export — model name',
+      prompt: 'Model to use for summary generation',
+      value: settings.openaiModel,
+      placeHolder: 'gpt-4o, glm-5.2, llama3, etc.',
+      ignoreFocusOut: true,
+      validateInput: (v) => (v.trim().length === 0 ? 'Model cannot be empty' : undefined),
+    });
+    if (model === undefined) return undefined;
+
     const apiKey = await secrets.ensureApiKey();
     if (!apiKey) {
       void vscode.window.showErrorMessage('ctx export needs an API key for the openai provider.');
       return undefined;
     }
-    args.push('--api-key', apiKey, '--api-base-url', settings.openaiBaseUrl, '--model', settings.openaiModel);
+    args.push('--api-key', apiKey, '--api-base-url', baseUrl.trim(), '--model', model.trim());
   }
 
   // 3. Toggles.
