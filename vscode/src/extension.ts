@@ -1,95 +1,77 @@
 import * as vscode from 'vscode';
-import { COMMANDS, EXTENSION_ID, MIN_BINARY_VERSION } from './constants';
+import { COMMANDS, EXTENSION_ID } from './constants';
 import { log } from './util/logger';
+import { getClient, hasBinary } from './binary/factory';
+import { SecretStore } from './config/settings';
+import { makeInfoCommand } from './commands/info';
+import { makeInspectCommand } from './commands/inspect';
+import { makeExportCommand } from './commands/export';
+import { makeImportCommand, makeApplyPatchCommand } from './commands/import';
+import { BundleTreeProvider } from './providers/bundleTreeProvider';
 
-/**
- * Called by VS Code when the extension activates.
- *
- * Activation triggers:
- *  - onStartupFinished (background — doesn't slow window load)
- *  - any of the ctx.* commands
- *  - the ctx.bundles view
- *
- * We activate eagerly enough to register the TreeView and ensure the
- * bundled binary is executable, but defer the heavier version check
- * until first command use.
- */
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
   log(`activating ${EXTENSION_ID}`);
 
-  // Register every command declared in package.json. Phase C uses a
-  // uniform placeholder; Phase E replaces handlers one by one.
-  const registrations: vscode.Disposable[] = [];
+  const secrets = new SecretStore(context.secrets);
 
-  for (const cmdId of Object.values(COMMANDS)) {
-    registrations.push(
-      vscode.commands.registerCommand(cmdId, makePlaceholder(cmdId)),
+  // Lazy client accessor — closes over the extension path.
+  const getClientFor = async () => getClient(context.extensionPath);
+
+  // Register commands. Each command handles its own error UX so
+  // activate() stays linear.
+  const disposables: vscode.Disposable[] = [];
+
+  disposables.push(
+    vscode.commands.registerCommand(COMMANDS.exportCtx, makeExportCommand(getClientFor, secrets)),
+  );
+  disposables.push(
+    vscode.commands.registerCommand(COMMANDS.importCtx, makeImportCommand(getClientFor)),
+  );
+  disposables.push(
+    vscode.commands.registerCommand(COMMANDS.inspect, makeInspectCommand(getClientFor)),
+  );
+  disposables.push(
+    vscode.commands.registerCommand(COMMANDS.info, makeInfoCommand(getClientFor)),
+  );
+  disposables.push(
+    vscode.commands.registerCommand(COMMANDS.applyPatch, makeApplyPatchCommand(getClientFor)),
+  );
+
+  // Tree view — refreshes when .ctx files change in the workspace.
+  const treeProvider = new BundleTreeProvider(getClientFor);
+  disposables.push(
+    vscode.window.registerTreeDataProvider('ctx.bundles', treeProvider),
+  );
+  disposables.push(
+    vscode.commands.registerCommand(COMMANDS.listRefresh, () => treeProvider.refresh()),
+  );
+
+  // Auto-refresh on workspace file changes (.ctx files added/removed).
+  const watcher = vscode.workspace.createFileSystemWatcher('**/*.ctx');
+  disposables.push(watcher);
+  disposables.push(watcher.onDidCreate(() => treeProvider.refresh()));
+  disposables.push(watcher.onDidDelete(() => treeProvider.refresh()));
+  disposables.push(watcher.onDidChange(() => treeProvider.refresh()));
+
+  context.subscriptions.push(...disposables);
+
+  // Surface a one-time warning if the binary isn't bundled for this
+  // platform (e.g. marketplace install on unsupported OS).
+  if (!hasBinary(context.extensionPath)) {
+    void vscode.window.showWarningMessage(
+      `ctx: no prebuilt binary for ${process.platform}/${process.arch}. ` +
+        `Commands will fail until you install a compatible binary.`,
     );
   }
 
-  // Placeholder TreeView so the activity-bar icon shows something useful.
-  const treeProvider = new PlaceholderTreeProvider();
-  registrations.push(vscode.window.registerTreeDataProvider('ctx.bundles', treeProvider));
-
-  context.subscriptions.push(...registrations);
-
-  log(`activated ${EXTENSION_ID}; ${registrations.length} contributions registered`);
-
-  return {
-    extensionPath: context.extensionPath,
-    minBinaryVersion: MIN_BINARY_VERSION,
-  };
+  log(`activated ${EXTENSION_ID}`);
+  return { extensionPath: context.extensionPath };
 }
 
-/**
- * Called when the extension is deactivated or VS Code is closing.
- * Nothing to dispose beyond context.subscriptions, which VS Code
- * handles automatically.
- */
 export function deactivate(): void {
   log(`deactivating ${EXTENSION_ID}`);
 }
 
 export interface ExtensionApi {
   extensionPath: string;
-  minBinaryVersion: string;
-}
-
-function makePlaceholder(cmdId: string): (...args: unknown[]) => void {
-  return (...args) => {
-    const argSummary = args.length === 0 ? '(no args)' : JSON.stringify(args);
-    const msg = `[ctx] "${cmdId}" not yet implemented. Args: ${argSummary}`;
-    log(msg);
-    void vscode.window.showInformationMessage(msg);
-  };
-}
-
-class PlaceholderTreeProvider implements vscode.TreeDataProvider<PlaceholderItem> {
-  private readonly _onDidChange = new vscode.EventEmitter<PlaceholderItem | undefined>();
-  readonly onDidChangeTreeData = this._onDidChange.event;
-
-  getTreeItem(element: PlaceholderItem): vscode.TreeItem {
-    return element;
-  }
-
-  getChildren(element?: PlaceholderItem): PlaceholderItem[] {
-    if (element) {
-      return [];
-    }
-    return [
-      new PlaceholderItem(
-        'No bundles yet',
-        'Run "ctx: Export Workspace Context" to create one.',
-        vscode.TreeItemCollapsibleState.None,
-      ),
-    ];
-  }
-}
-
-class PlaceholderItem extends vscode.TreeItem {
-  constructor(label: string, description: string, collapsible: vscode.TreeItemCollapsibleState) {
-    super(label, collapsible);
-    this.description = description;
-    this.tooltip = description;
-  }
 }
