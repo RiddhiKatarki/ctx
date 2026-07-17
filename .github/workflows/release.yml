@@ -113,11 +113,11 @@ jobs:
 
   publish-marketplace:
     name: VS Code Marketplace
-    needs: publish-release
+    needs: [publish-release, check-pat]
     runs-on: ubuntu-latest
     # Only publish when VSCE_PAT is configured. Without it, the .vsix
     # is still downloadable from the GitHub Release for manual install.
-    if: ${{ secrets.VSCE_PAT != '' }}
+    if: ${{ needs.check-pat.outputs.has_pat == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - name: Download all binary artifacts
@@ -145,3 +145,23 @@ jobs:
       - name: Publish to Marketplace
         run: npx vsce publish --no-yarn --pat "${{ secrets.VSCE_PAT }}"
         working-directory: vscode
+
+  # Guard job — exposes whether VSCE_PAT is configured. Required because
+  # the secrets context cannot be referenced directly in job-level `if:`.
+  check-pat:
+    name: Check VSCE_PAT
+    runs-on: ubuntu-latest
+    outputs:
+      has_pat: ${{ steps.check.outputs.has_pat }}
+    steps:
+      - id: check
+        env:
+          PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -n "$PAT" ]; then
+            echo "has_pat=true" >> "$GITHUB_OUTPUT"
+            echo "VSCE_PAT is configured"
+          else
+            echo "has_pat=false" >> "$GITHUB_OUTPUT"
+            echo "VSCE_PAT is not set; skipping Marketplace publish"
+          fi
