@@ -1,5 +1,6 @@
 # ctx — Context Handoff
 
+
 A cross-platform CLI tool that allows developers to export and import the **working context** of an AI-assisted software development session.
 
 `ctx` serializes the current development state (git metadata, modified files, prompt history, AI-generated summary) into a portable `.ctx` bundle so another developer or AI agent can continue working with minimal onboarding.

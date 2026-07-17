@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,10 +17,11 @@ import (
 	"github.com/RiddhiKatarki/ctx/internal/inspect"
 	"github.com/RiddhiKatarki/ctx/internal/providers"
 	"github.com/RiddhiKatarki/ctx/internal/reporter"
+	"github.com/RiddhiKatarki/ctx/internal/schema"
 	"github.com/RiddhiKatarki/ctx/internal/summary"
 )
 
-const version = "2.0.0"
+const version = "2.1.0"
 
 // Output flags — persisted across subcommands.
 var (
@@ -36,7 +38,7 @@ the working context of an AI-assisted software development session.
 It serializes the current development state (git metadata, modified files,
 prompt history, AI summary) into a portable .ctx bundle so another developer
 or AI agent can continue working with minimal onboarding.`,
-	Version:    version,
+	Version:      version,
 	SilenceUsage: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		jsonOutput, _ = cmd.Flags().GetBool("json")
@@ -57,9 +59,9 @@ var exportCmd = &cobra.Command{
 Packages everything into a portable .ctx archive.
 
 Use --json to emit a structured result suitable for scripting and tools.`,
-	RunE:           runExport,
-	SilenceErrors:  true,
-	SilenceUsage:   true,
+	RunE:          runExport,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 var inspectCmd = &cobra.Command{
@@ -69,10 +71,10 @@ var inspectCmd = &cobra.Command{
 without extracting or importing the full archive.
 
 Use --json to emit a structured result suitable for tooling.`,
-	Args:           cobra.MaximumNArgs(1),
-	RunE:           runInspect,
-	SilenceErrors:  true,
-	SilenceUsage:   true,
+	Args:          cobra.MaximumNArgs(1),
+	RunE:          runInspect,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 var importCmd = &cobra.Command{
@@ -83,10 +85,10 @@ and displays a summary of its contents.
 
 Use --outdir to extract the bundle contents to a directory.
 Use --json to emit a structured result suitable for tooling.`,
-	Args:           cobra.MaximumNArgs(1),
-	RunE:           runImport,
-	SilenceErrors:  true,
-	SilenceUsage:   true,
+	Args:          cobra.MaximumNArgs(1),
+	RunE:          runImport,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 var listCmd = &cobra.Command{
@@ -112,6 +114,33 @@ file list, and bundle size.
 Always emits JSON — this command is built for tooling consumption.`,
 	Args:          cobra.ExactArgs(1),
 	RunE:          runInfo,
+	SilenceErrors: true,
+	SilenceUsage:  true,
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print ctx version and bundle-format compatibility info",
+	Long: `Prints the ctx version. With --json, emits a machine-readable object
+suitable for tooling (e.g. a VS Code extension activation check):
+
+  {"version":"2.1.0","bundle_format":1,"binary_os":"linux","binary_arch":"amd64"}
+
+Use this to verify binary/extension compatibility.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		info := map[string]any{
+			"version":       version,
+			"bundle_format": schema.BundleVersion,
+			"binary_os":     runtime.GOOS,
+			"binary_arch":   runtime.GOARCH,
+		}
+		if jsonOutput {
+			return emitJSON(info)
+		}
+		fmt.Printf("ctx version %s (bundle format %d, %s/%s)\n",
+			version, schema.BundleVersion, runtime.GOOS, runtime.GOARCH)
+		return nil
+	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -144,6 +173,7 @@ func init() {
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(versionCmd)
 
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "emit machine-readable JSON to stdout (single result object)")
 	rootCmd.PersistentFlags().BoolVar(&streamOutput, "stream", false, "emit NDJSON progress events to stdout (one line per stage)")
@@ -206,17 +236,17 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	rep := buildReporter()
 	result, runErr := export.Run(export.Config{
-		OutputPath:         exportOutput,
-		ProjectName:        exportProjectName,
-		WorkingDir:         wd,
-		PromptProvider:     promptProv,
-		SummaryProvider:    summProv,
-		ExtraFiles:         extraFiles,
-		Reporter:           rep,
-		DisableSecretScan:  exportNoSecretScan,
-		IncludeSecrets:     exportIncludeSecrets,
-		IncludeContents:    exportIncludeContents,
-		ContentsThreshold:  exportContentsThreshold,
+		OutputPath:        exportOutput,
+		ProjectName:       exportProjectName,
+		WorkingDir:        wd,
+		PromptProvider:    promptProv,
+		SummaryProvider:   summProv,
+		ExtraFiles:        extraFiles,
+		Reporter:          rep,
+		DisableSecretScan: exportNoSecretScan,
+		IncludeSecrets:    exportIncludeSecrets,
+		IncludeContents:   exportIncludeContents,
+		ContentsThreshold: exportContentsThreshold,
 	})
 	if runErr != nil {
 		return classifyExportError(runErr)
@@ -263,9 +293,9 @@ func runImport(cmd *cobra.Command, args []string) error {
 
 	rep := buildReporter()
 	result, runErr := importctx.Run(importctx.Config{
-		Path:      path,
-		OutDir:    importOutDir,
-		Reporter:  rep,
+		Path:     path,
+		OutDir:   importOutDir,
+		Reporter: rep,
 	})
 	if runErr != nil {
 		if isZipErr(runErr) {

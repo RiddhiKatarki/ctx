@@ -134,14 +134,14 @@ func TestCursorProvider_Detection(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "User"), 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	p := NewCursorProvider(dir)
+	p := NewCursorProvider(dir, "")
 	if !p.(AvailChecker).Available() {
 		t.Error("expected available when User/ subdir exists")
 	}
 
 	// Empty dir without User/ → not available
 	empty := t.TempDir()
-	p2 := NewCursorProvider(empty)
+	p2 := NewCursorProvider(empty, "")
 	if p2.(AvailChecker).Available() {
 		t.Error("expected not available when User/ subdir missing")
 	}
@@ -149,21 +149,34 @@ func TestCursorProvider_Detection(t *testing.T) {
 
 func TestCursorProvider_NoInstall(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "no-cursor-here")
-	p := NewCursorProvider(dir)
+	p := NewCursorProvider(dir, "")
 	if p.(AvailChecker).Available() {
 		t.Error("expected not available for missing install dir")
 	}
 }
 
-func TestCursorProvider_History_Limited(t *testing.T) {
+func TestCursorProvider_History_NoDB(t *testing.T) {
+	// User/ exists but no state.vscdb → empty list, no error.
 	dir := t.TempDir()
-	p := NewCursorProvider(dir)
+	if err := os.MkdirAll(filepath.Join(dir, "User", "globalStorage"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	p := NewCursorProvider(dir, "")
+	prompts, err := p.History()
+	if err != nil {
+		t.Fatalf("expected no error for empty install, got: %v", err)
+	}
+	if len(prompts) != 0 {
+		t.Errorf("expected 0 prompts, got %d", len(prompts))
+	}
+}
+
+func TestCursorProvider_History_NoInstall(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "no-cursor-here")
+	p := NewCursorProvider(dir, "")
 	_, err := p.History()
 	if err == nil {
-		t.Error("expected limited-error indicating SQLite not implemented")
-	}
-	if !contains(err.Error(), "SQLite") {
-		t.Errorf("expected error to mention SQLite, got %v", err)
+		t.Error("expected error when no install detected")
 	}
 }
 

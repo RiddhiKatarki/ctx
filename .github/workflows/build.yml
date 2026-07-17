@@ -1,0 +1,85 @@
+name: build
+
+# Runs on every push/PR to verify the Go build + tests pass across all
+# supported platforms. Does NOT publish artifacts. Publishing is the
+# release.yml workflow's job (triggered by tags).
+on:
+  push:
+    branches: [main, feat/vscode-extension]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test & vet (linux/amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          cache: true
+      - name: Go format check (changed files only)
+        # The historical codebase predates gofmt enforcement, so we only
+        # check files touched by this PR/branch. This keeps the gate
+        # meaningful without reformatting unrelated code.
+        run: |
+          BASE="origin/main"
+          git fetch --depth=1 origin main 2>/dev/null || true
+          CHANGED=$(git diff --name-only --diff-filter=AM "$BASE"...HEAD -- '*.go' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No Go files changed; skipping gofmt check."
+            exit 0
+          fi
+          echo "Checking gofmt on:"
+          echo "$CHANGED"
+          BAD=""
+          while IFS= read -r f; do
+            if [ -f "$f" ] && [ -n "$(gofmt -l "$f")" ]; then
+              BAD="$BAD $f"
+            fi
+          done <<< "$CHANGED"
+          if [ -n "$BAD" ]; then
+            echo "::error::Files need gofmt:$BAD"
+            gofmt -d $BAD
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race -cover ./...
+
+  cross-compile:
+    name: Cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          cache: true
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        shell: bash
+        run: |
+          exe=""
+          if [ "$GOOS" = "windows" ]; then exe=".exe"; fi
+          go build -trimpath -ldflags "-s -w" -o "ctx-${GOOS}-${GOARCH}${exe}" ./cmd/ctx
+          ls -lh "ctx-${GOOS}-${GOARCH}${exe}"

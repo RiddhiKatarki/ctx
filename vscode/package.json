@@ -1,0 +1,322 @@
+{
+  "name": "ctx",
+  "displayName": "ctx — Context Handoff",
+  "description": "Export and import AI-assisted development session context as portable .ctx bundles. Wraps the ctx CLI with a native VS Code experience.",
+  "version": "1.1.0",
+  "publisher": "riddhikatarki",
+  "license": "MIT",
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#0c4a6e",
+    "theme": "dark"
+  },
+  "badges": [
+    {
+      "url": "https://img.shields.io/badge/version-1.1.0-blue.svg",
+      "href": "https://github.com/RiddhiKatarki/ctx/blob/main/vscode/CHANGELOG.md",
+      "description": "version"
+    },
+    {
+      "url": "https://img.shields.io/badge/license-MIT-green.svg",
+      "href": "https://github.com/RiddhiKatarki/ctx/blob/main/vscode/LICENSE",
+      "description": "license"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RiddhiKatarki/ctx"
+  },
+  "homepage": "https://github.com/RiddhiKatarki/ctx",
+  "bugs": {
+    "url": "https://github.com/RiddhiKatarki/ctx/issues"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "SCM Providers"
+  ],
+  "keywords": [
+    "ai",
+    "context",
+    "handoff",
+    "cursor",
+    "claude",
+    "opencode",
+    "aider"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:ctx.export",
+    "onCommand:ctx.import",
+    "onCommand:ctx.inspect",
+    "onCommand:ctx.info",
+    "onView:ctx.bundles"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ctx.export",
+        "title": "ctx: Export Workspace Context",
+        "category": "ctx",
+        "icon": "$(export)"
+      },
+      {
+        "command": "ctx.import",
+        "title": "ctx: Import Bundle...",
+        "category": "ctx",
+        "icon": "$(import)"
+      },
+      {
+        "command": "ctx.inspect",
+        "title": "ctx: Inspect Bundle",
+        "category": "ctx",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "ctx.info",
+        "title": "ctx: Show Bundle Metadata",
+        "category": "ctx",
+        "icon": "$(info)"
+      },
+      {
+        "command": "ctx.applyPatch",
+        "title": "ctx: Apply Patch from Bundle",
+        "category": "ctx",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "ctx.list.refresh",
+        "title": "ctx: Refresh Bundles",
+        "category": "ctx",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ctx.updateApiKey",
+        "title": "ctx: Update OpenAI API Key",
+        "category": "ctx"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ctx",
+          "title": "ctx",
+          "icon": "resources/activity-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ctx": [
+        {
+          "id": "ctx.bundles",
+          "name": "Context Bundles",
+          "welcomeView": true
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "ctx.bundles",
+        "contents": "No .ctx bundles found in this workspace.\n[Export context](command:ctx.export)\n[Import a bundle...](command:ctx.import)\nTo learn more [read the docs](https://github.com/RiddhiKatarki/ctx).",
+        "when": "workspaceFolderCount > 0"
+      },
+      {
+        "view": "ctx.bundles",
+        "contents": "Open a workspace folder to see its .ctx bundles.\n[Open Folder...](command:workbench.action.files.openFolder)\n[Import a bundle...](command:ctx.import)",
+        "when": "workspaceFolderCount == 0"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "ctx.export",
+          "when": "workspaceFolderCount > 0"
+        },
+        {
+          "command": "ctx.import"
+        },
+        {
+          "command": "ctx.inspect",
+          "when": "activeWebviewPanelId != 'ctx.inspect' && resourceFilename =~ /\\.ctx$/"
+        },
+        {
+          "command": "ctx.info",
+          "when": "resourceFilename =~ /\\.ctx$/"
+        },
+        {
+          "command": "ctx.applyPatch",
+          "when": "resourceFilename =~ /\\.ctx$/"
+        },
+        {
+          "command": "ctx.list.refresh",
+          "when": "false"
+        },
+        {
+          "command": "ctx.updateApiKey"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "ctx.inspect",
+          "when": "resourceFilename =~ /\\.ctx$/",
+          "group": "ctx@1"
+        },
+        {
+          "command": "ctx.info",
+          "when": "resourceFilename =~ /\\.ctx$/",
+          "group": "ctx@2"
+        },
+        {
+          "command": "ctx.import",
+          "when": "resourceFilename =~ /\\.ctx$/",
+          "group": "ctx@3"
+        },
+        {
+          "command": "ctx.applyPatch",
+          "when": "resourceFilename =~ /\\.ctx$/",
+          "group": "ctx@4"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "ctx.inspect",
+          "when": "resourceFilename =~ /\\.ctx$/",
+          "group": "navigation"
+        },
+        {
+          "command": "ctx.info",
+          "when": "resourceFilename =~ /\\.ctx$/",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "ctx.list.refresh",
+          "when": "view == ctx.bundles",
+          "group": "navigation"
+        },
+        {
+          "command": "ctx.export",
+          "when": "view == ctx.bundles && workspaceFolderCount > 0",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ctx.inspect",
+          "when": "view == ctx.bundles && viewItem == ctx.bundle",
+          "group": "inline@1"
+        },
+        {
+          "command": "ctx.info",
+          "when": "view == ctx.bundles && viewItem == ctx.bundle",
+          "group": "inline@2"
+        },
+        {
+          "command": "ctx.import",
+          "when": "view == ctx.bundles && viewItem == ctx.bundle",
+          "group": "ctx@1"
+        },
+        {
+          "command": "ctx.applyPatch",
+          "when": "view == ctx.bundles && viewItem == ctx.bundle",
+          "group": "ctx@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ctx",
+      "properties": {
+        "ctx.summaryProvider": {
+          "type": "string",
+          "enum": [
+            "template",
+            "openai"
+          ],
+          "default": "template",
+          "enumDescriptions": [
+            "Local offline summary based on git/diff metadata (default).",
+            "Send a request to an OpenAI-compatible chat completions API."
+          ],
+          "description": "Summary provider used during export."
+        },
+        "ctx.openaiBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL for the OpenAI-compatible API. Works with Venice, Ollama, vLLM, etc."
+        },
+        "ctx.openaiModel": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "Model name to use with the openai summary provider."
+        },
+        "ctx.defaultOutputName": {
+          "type": "string",
+          "default": "project.ctx",
+          "description": "Default output bundle filename for exports."
+        },
+        "ctx.defaultOutdir": {
+          "type": "string",
+          "default": ".ctx",
+          "description": "Default directory to extract bundles into on import."
+        },
+        "ctx.secretScanEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, scan file contents for secrets and redact them before bundling."
+        },
+        "ctx.includeContents": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, embed file contents under contents/ to create a self-contained bundle."
+        },
+        "ctx.contentsThreshold": {
+          "type": "number",
+          "default": 262144,
+          "minimum": 0,
+          "description": "Maximum bytes per embedded file when ctx.includeContents is true."
+        },
+        "ctx.showNotifications": {
+          "type": "string",
+          "enum": [
+            "all",
+            "errorsOnly",
+            "none"
+          ],
+          "default": "errorsOnly",
+          "description": "Controls when ctx shows progress/result notifications."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "tsc --noEmit && node esbuild.js --sourcemap",
+    "watch": "node esbuild.js --sourcemap --watch",
+    "package": "node esbuild.js --production",
+    "test": "npm run compile && npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run test/unit",
+    "test:integration": "vitest run test/integration",
+    "download-bins": "node scripts/download-bins.js",
+    "download-bins:dev": "node scripts/download-bins.js --dev",
+    "lint": "eslint src --ext ts",
+    "clean": "rimraf dist out vscode-*.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vscode/test-electron": "^2.4.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.23.0",
+    "eslint": "^8.57.0",
+    "rimraf": "^5.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
