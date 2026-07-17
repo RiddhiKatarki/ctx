@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
 import type { CtxClient } from '../binary/client';
 import type { InspectResult, Summary } from '../types';
+import { log, logError, getOutputChannel } from '../util/logger';
 
 const SECTION_LABELS: { key: keyof Summary; label: string }[] = [
   { key: 'current_objective', label: 'Current Objective' },
@@ -16,14 +20,47 @@ const SECTION_LABELS: { key: keyof Summary; label: string }[] = [
 
 export function makeInspectCommand(getClient: () => Promise<CtxClient>) {
   return async (input?: unknown): Promise<void> => {
-    const path = await resolveBundleUri(input);
-    if (!path) {
+    const bundlePath = await resolveBundleUri(input);
+    if (!bundlePath) {
+      log('inspect: no bundle path resolved, exiting');
       return;
     }
 
-    const client = await getClient();
-    const result = await client.runJSON<InspectResult>(['inspect', path]);
-    await renderInspectPanel(result, path);
+    log(`inspect: starting for ${bundlePath}`);
+
+    let result: InspectResult;
+    try {
+      const client = await getClient();
+      log(`inspect: client obtained, running ctx inspect --json`);
+      result = await client.runJSON<InspectResult>(['inspect', bundlePath]);
+      log(`inspect: got result, valid=${result.valid}, sections=${Object.keys(result.summary_sections).length}`);
+    } catch (err) {
+      logError('inspect: command failed', err);
+      void vscode.window.showErrorMessage(
+        `ctx inspect failed: ${err instanceof Error ? err.message : String(err)}`,
+        'Open Logs',
+      ).then((action) => {
+        if (action === 'Open Logs') {
+          getOutputChannel().show();
+        }
+      });
+      return;
+    }
+
+    try {
+      await renderInspect(result, bundlePath);
+      log('inspect: rendered');
+    } catch (err) {
+      logError('inspect: render failed', err);
+      void vscode.window.showErrorMessage(
+        `ctx inspect render failed: ${err instanceof Error ? err.message : String(err)}`,
+        'Open Logs',
+      ).then((action) => {
+        if (action === 'Open Logs') {
+          getOutputChannel().show();
+        }
+      });
+    }
   };
 }
 
@@ -46,110 +83,74 @@ async function resolveBundleUri(input?: unknown): Promise<string | undefined> {
   return picked?.[0]?.fsPath;
 }
 
-async function renderInspectPanel(result: InspectResult, bundlePath: string): Promise<void> {
-  const panel = vscode.window.createWebviewPanel(
-    'ctx.inspect',
-    `Inspect: ${basename(bundlePath)}`,
-    vscode.ViewColumn.Active,
-    {
-      enableFindWidget: true,
-      enableScripts: true, // for the copy button
-    },
-  );
+/**
+ * Renders the inspect result by writing a Markdown file to a temp
+ * directory and opening it in VS Code's built-in Markdown preview.
+ *
+ * This is more reliable than a custom WebView across environments
+ * (desktop VS Code, code-server, vscode.dev) because it uses the
+ * host's battle-tested markdown renderer instead of a bespoke
+ * HTML/CSS/JS bundle that may be blocked by CSP or iframe sandboxing.
+ *
+ * The Markdown source is also kept open in a text editor tab so users
+ * can copy the raw summary, edit it, or save it elsewhere.
+ */
+async function renderInspect(result: InspectResult, bundlePath: string): Promise<void> {
+  const title = bundleTitleFromMetadata(result, bundlePath);
+  const md = renderMarkdown(result, title, bundlePath);
 
-  panel.webview.html = renderInspectHtml(result, bundlePath);
+  // Write to a temp file in the OS temp dir so we never pollute the
+  // user's workspace. The filename includes the bundle's basename so
+  // multiple bundles can be inspected simultaneously without collision.
+  const tempDir = path.join(os.tmpdir(), 'ctx-inspect');
+  fs.mkdirSync(tempDir, { recursive: true });
+  const safeName = basename(bundlePath).replace(/[^a-z0-9.-]+/gi, '_');
+  const mdPath = path.join(tempDir, `${safeName}.md`);
+  fs.writeFileSync(mdPath, md, 'utf8');
+
+  const uri = vscode.Uri.file(mdPath);
+
+  // Open the markdown source in an editor tab (non-preview so it stays).
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc, { preview: false, viewColumn: vscode.ViewColumn.One });
+
+  // Open the rendered Markdown preview beside it.
+  await vscode.commands.executeCommand('markdown.showPreviewToSide', uri);
 }
 
-function renderInspectHtml(result: InspectResult, bundlePath: string): string {
-  const sections = result.summary_sections;
-  const cards = SECTION_LABELS.map(({ key, label }) => {
-    const text = sections[key] || '(not provided)';
-    return `<section class="card">
-      <h2>${escape(label)}</h2>
-      <div class="content">${escape(text).replace(/\n/g, '<br>')}</div>
-    </section>`;
-  }).join('\n');
+/**
+ * Renders the inspect result as GitHub-flavored Markdown. Mirrors the
+ * 9 canonical section labels and the bundle's metadata header.
+ */
+function renderMarkdown(result: InspectResult, title: string, bundlePath: string): string {
+  const lines: string[] = [];
+  lines.push(`# ${title}`);
+  lines.push('');
+  lines.push(`> Bundle: \`${basename(bundlePath)}\` · ${result.files.length} file${result.files.length === 1 ? '' : 's'}${result.valid ? '' : ' · ⚠ invalid'}`);
+  lines.push('');
+  lines.push('---');
+  lines.push('');
 
-  const invalidBanner = result.valid
-    ? ''
-    : '<div class="banner invalid">⚠ This bundle failed validation.</div>';
+  for (const { key, label } of SECTION_LABELS) {
+    const text = result.summary_sections[key] || '(not provided)';
+    lines.push(`## ${label}`);
+    lines.push('');
+    lines.push(text);
+    lines.push('');
+  }
 
-  const filesList = result.files.length > 0
-    ? `<footer>
-        <strong>Files:</strong>
-        <ul>${result.files.map((f) => `<li><code>${escape(f)}</code></li>`).join('')}</ul>
-      </footer>`
-    : '';
+  if (result.files.length > 0) {
+    lines.push('---');
+    lines.push('');
+    lines.push(`## Files (${result.files.length})`);
+    lines.push('');
+    for (const f of result.files) {
+      lines.push(`- \`${f}\``);
+    }
+    lines.push('');
+  }
 
-  // Serialize sections for the copy-as-markdown script. Escape </script>
-  // sequences to prevent breakout (the summary text is trusted but this
-  // is cheap insurance).
-  const sectionsJson = JSON.stringify(sections).replace(/</g, '\\u003c');
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-  <title>ctx inspect: ${escape(basename(bundlePath))}</title>
-  <style>
-    body { font-family: var(--vscode-font-family, sans-serif); color: var(--vscode-foreground, #333); padding: 1rem; max-width: 900px; margin: 0 auto; background-color: var(--vscode-editor-background, #fff); }
-    header h1 { font-size: 1.2rem; margin-bottom: 0.25rem; }
-    header .meta { color: var(--vscode-descriptionForeground, #666); font-size: 0.9rem; margin-bottom: 1rem; }
-    .toolbar { margin-bottom: 1rem; }
-    .toolbar button { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); border: none; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 2px; font-size: 0.85rem; }
-    .toolbar button:hover { filter: brightness(1.1); }
-    .card { margin-bottom: 1rem; padding: 0.75rem 1rem; border-left: 3px solid var(--vscode-textLink-foreground, #007acc); background: var(--vscode-textBlockQuote-background, rgba(0,0,0,0.04)); border-radius: 0 3px 3px 0; }
-    .card h2 { font-size: 0.95rem; margin: 0 0 0.5rem 0; color: var(--vscode-textLink-foreground, #007acc); }
-    .card .content { white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; }
-    .banner.invalid { background: rgba(255,0,0,0.1); border: 1px solid rgba(255,0,0,0.3); padding: 0.5rem 1rem; margin-bottom: 1rem; border-radius: 2px; }
-    footer { margin-top: 1.5rem; padding-top: 0.5rem; border-top: 1px solid var(--vscode-editorWidget-border, #ccc); color: var(--vscode-descriptionForeground, #666); font-size: 0.85rem; }
-    footer ul { padding-left: 1.5rem; }
-    code { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.04)); padding: 0.1rem 0.3rem; border-radius: 2px; }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>${escape(bundleTitleFromMetadata(result, bundlePath))}</h1>
-    <div class="meta">${escape(basename(bundlePath))} · ${result.files.length} file${result.files.length === 1 ? '' : 's'}</div>
-  </header>
-
-  ${invalidBanner}
-
-  <div class="toolbar">
-    <button id="copy-btn">Copy as Markdown</button>
-  </div>
-
-  ${cards}
-
-  ${filesList}
-
-  <script>
-    (function() {
-      var sections = ${sectionsJson};
-      var btn = document.getElementById('copy-btn');
-      if (btn) {
-        btn.addEventListener('click', function() {
-          var md = Object.keys(sections).map(function(k) {
-            return '## ' + k + '\\n\\n' + sections[k];
-          }).join('\\n\\n');
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(md).then(function() {
-              var orig = btn.textContent;
-              btn.textContent = 'Copied!';
-              setTimeout(function() { btn.textContent = orig; }, 1200);
-            });
-          } else {
-              var orig = btn.textContent;
-              btn.textContent = 'Copied!';
-              setTimeout(function() { btn.textContent = orig; }, 1200);
-          }
-        });
-      }
-    })();
-  </script>
-</body>
-</html>`;
+  return lines.join('\n');
 }
 
 function bundleTitleFromMetadata(result: InspectResult, fallback: string): string {
@@ -158,14 +159,6 @@ function bundleTitleFromMetadata(result: InspectResult, fallback: string): strin
     return meta.project_name + (meta.branch ? ` (${meta.branch})` : '');
   }
   return basename(fallback);
-}
-
-function escape(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 function basename(p: string): string {

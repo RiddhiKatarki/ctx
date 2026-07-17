@@ -1,44 +1,68 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
 import type { CtxClient } from '../binary/client';
 import type { InfoResult } from '../types';
+import { log, logError, getOutputChannel } from '../util/logger';
 
-/**
- * ctx.info command. Resolves a .ctx file from either:
- *   - the command argument (explorer/context menu click), or
- *   - the active editor's document, or
- *   - a user file picker prompt.
- *
- * Then runs `ctx info --json` and renders the result in a WebView panel.
- */
 export function makeInfoCommand(getClient: () => Promise<CtxClient>) {
   return async (input?: unknown): Promise<void> => {
-    const path = await resolveBundleUri(input);
-    if (!path) {
-      return; // user cancelled
+    const bundlePath = await resolveBundleUri(input);
+    if (!bundlePath) {
+      log('info: no bundle path resolved, exiting');
+      return;
     }
 
-    const client = await getClient();
-    const result = await client.runJSON<InfoResult>(['info', path]);
-    await renderInfoPanel(result);
+    log(`info: starting for ${bundlePath}`);
+
+    let result: InfoResult;
+    try {
+      const client = await getClient();
+      log(`info: running ctx info --json`);
+      result = await client.runJSON<InfoResult>(['info', bundlePath]);
+      log(`info: got result, valid=${result.valid}, file_count=${result.file_count}`);
+    } catch (err) {
+      logError('info: command failed', err);
+      void vscode.window.showErrorMessage(
+        `ctx info failed: ${err instanceof Error ? err.message : String(err)}`,
+        'Open Logs',
+      ).then((action) => {
+        if (action === 'Open Logs') {
+          getOutputChannel().show();
+        }
+      });
+      return;
+    }
+
+    try {
+      await renderInfo(result);
+      log('info: rendered');
+    } catch (err) {
+      logError('info: render failed', err);
+      void vscode.window.showErrorMessage(
+        `ctx info render failed: ${err instanceof Error ? err.message : String(err)}`,
+        'Open Logs',
+      ).then((action) => {
+        if (action === 'Open Logs') {
+          getOutputChannel().show();
+        }
+      });
+    }
   };
 }
 
 async function resolveBundleUri(input?: unknown): Promise<string | undefined> {
-  // From explorer/context menu: input is a Uri or { fsPath }.
   if (input instanceof vscode.Uri) {
     return input.fsPath;
   }
   if (typeof input === 'object' && input !== null && 'fsPath' in input) {
     return String((input as { fsPath: unknown }).fsPath);
   }
-
-  // From editor/title: the active document.
   const active = vscode.window.activeTextEditor?.document.uri;
   if (active && active.fsPath.endsWith('.ctx')) {
     return active.fsPath;
   }
-
-  // Fallback: file picker.
   const picked = await vscode.window.showOpenDialog({
     canSelectMany: false,
     filters: { 'ctx bundle': ['ctx'] },
@@ -47,66 +71,74 @@ async function resolveBundleUri(input?: unknown): Promise<string | undefined> {
   return picked?.[0]?.fsPath;
 }
 
-async function renderInfoPanel(result: InfoResult): Promise<void> {
-  const panel = vscode.window.createWebviewPanel(
-    'ctx.info',
-    `ctx: ${basename(result.path)}`,
-    vscode.ViewColumn.Active,
-    { enableFindWidget: true },
-  );
-  panel.webview.html = renderHtml(result);
+/**
+ * Renders bundle metadata as Markdown in a temp file, opened in VS
+ * Code's built-in Markdown preview. Same rationale as inspect.ts:
+ * reliable across desktop, code-server, and web.
+ */
+async function renderInfo(result: InfoResult): Promise<void> {
+  const md = renderMarkdown(result);
+
+  const tempDir = path.join(os.tmpdir(), 'ctx-info');
+  fs.mkdirSync(tempDir, { recursive: true });
+  const safeName = basename(result.path).replace(/[^a-z0-9.-]+/gi, '_');
+  const mdPath = path.join(tempDir, `${safeName}.md`);
+  fs.writeFileSync(mdPath, md, 'utf8');
+
+  const uri = vscode.Uri.file(mdPath);
+  const doc = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(doc, { preview: false, viewColumn: vscode.ViewColumn.One });
+  await vscode.commands.executeCommand('markdown.showPreviewToSide', uri);
 }
 
-function renderHtml(result: InfoResult): string {
-  const rows: string[] = [];
-  rows.push(`<tr><th>Path</th><td><code>${escape(result.path)}</code></td></tr>`);
-  rows.push(`<tr><th>Size</th><td>${formatBytes(result.size)}</td></tr>`);
-  rows.push(`<tr><th>Valid</th><td>${result.valid ? '✓ yes' : '✗ no'}</td></tr>`);
-  rows.push(`<tr><th>Files</th><td>${result.file_count}</td></tr>`);
-  rows.push(`<tr><th>Has diff</th><td>${result.has_diff ? 'yes' : 'no'} (${formatBytes(result.diff_size)})</td></tr>`);
-  rows.push(`<tr><th>Summary length</th><td>${result.summary_length} chars</td></tr>`);
+function renderMarkdown(result: InfoResult): string {
+  const lines: string[] = [];
+  lines.push(`# Bundle info`);
+  lines.push('');
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
-  <title>ctx info: ${escape(basename(result.path))}</title>
-  <style>
-    body { font-family: var(--vscode-font-family, sans-serif); color: var(--vscode-foreground, #333); padding: 1rem; background-color: var(--vscode-editor-background, #fff); }
-    h1 { font-size: 1.1rem; margin-top: 0; }
-    h2 { font-size: 0.95rem; margin: 1rem 0 0.5rem 0; color: var(--vscode-textLink-foreground, #007acc); }
-    table { border-collapse: collapse; margin: 1rem 0; }
-    th { text-align: left; padding: 0.25rem 1rem 0.25rem 0; color: var(--vscode-descriptionForeground, #666); font-weight: normal; vertical-align: top; }
-    td { padding: 0.25rem 0; }
-    pre { background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.04)); padding: 0.5rem; border-radius: 3px; overflow: auto; max-height: 300px; white-space: pre-wrap; word-wrap: break-word; }
-    code { font-family: var(--vscode-editor-font-family, monospace); }
-    ul { padding-left: 1.5rem; }
-  </style>
-</head>
-<body>
-  <h1>Bundle info</h1>
-  <table>${rows.join('\n')}</table>
+  lines.push('| Field | Value |');
+  lines.push('| --- | --- |');
+  lines.push(`| Path | \`${result.path}\` |`);
+  lines.push(`| Size | ${formatBytes(result.size)} |`);
+  lines.push(`| Valid | ${result.valid ? 'yes' : 'no'} |`);
+  lines.push(`| Files | ${result.file_count} |`);
+  lines.push(`| Has diff | ${result.has_diff ? `yes (${formatBytes(result.diff_size)})` : 'no'} |`);
+  lines.push(`| Summary length | ${result.summary_length} chars |`);
+  lines.push('');
 
-  <h2>Manifest</h2>
-  <pre>${escape(JSON.stringify(result.manifest, null, 2))}</pre>
+  lines.push('## Manifest');
+  lines.push('');
+  lines.push('```json');
+  lines.push(JSON.stringify(result.manifest, null, 2));
+  lines.push('```');
+  lines.push('');
 
-  <h2>Metadata</h2>
-  <pre>${escape(JSON.stringify(result.metadata, null, 2))}</pre>
+  lines.push('## Metadata');
+  lines.push('');
+  lines.push('```json');
+  lines.push(JSON.stringify(result.metadata, null, 2));
+  lines.push('```');
+  lines.push('');
 
-  ${result.git && Object.keys(result.git).length > 0 ? `<h2>Git</h2><pre>${escape(JSON.stringify(result.git, null, 2))}</pre>` : ''}
+  if (result.git && Object.keys(result.git).length > 0) {
+    lines.push('## Git');
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(result.git, null, 2));
+    lines.push('```');
+    lines.push('');
+  }
 
-  ${result.files.length > 0 ? `<h2>Files (${result.files.length})</h2><ul>${result.files.map((f) => `<li><code>${escape(f)}</code></li>`).join('\n')}</ul>` : ''}
-</body>
-</html>`;
-}
+  if (result.files.length > 0) {
+    lines.push(`## Files (${result.files.length})`);
+    lines.push('');
+    for (const f of result.files) {
+      lines.push(`- \`${f}\``);
+    }
+    lines.push('');
+  }
 
-function escape(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return lines.join('\n');
 }
 
 function formatBytes(n: number): string {
