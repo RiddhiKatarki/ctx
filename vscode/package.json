@@ -5,6 +5,23 @@
   "version": "1.0.0-rc.1",
   "publisher": "riddhikatarki",
   "license": "MIT",
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#0c4a6e",
+    "theme": "dark"
+  },
+  "badges": [
+    {
+      "url": "https://img.shields.io/badge/version-1.0.0--rc.1-blue.svg",
+      "href": "https://github.com/RiddhiKatarki/ctx/blob/main/vscode/CHANGELOG.md",
+      "description": "version"
+    },
+    {
+      "url": "https://img.shields.io/badge/license-MIT-green.svg",
+      "href": "https://github.com/RiddhiKatarki/ctx/blob/main/vscode/LICENSE",
+      "description": "license"
+    }
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/RiddhiKatarki/ctx"
