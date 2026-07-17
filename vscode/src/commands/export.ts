@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import type { CtxClient, CtxError } from '../binary/client';
 import type { ExportResult, StreamEvent } from '../types';
 import { Settings, SecretStore } from '../config/settings';
@@ -33,6 +34,26 @@ export function makeExportCommand(
       void vscode.window.showErrorMessage(
         'ctx export needs an open workspace folder.',
       );
+      return;
+    }
+
+    // Pre-flight: ctx export requires a git repository. Fail fast with
+    // an actionable message instead of making the user walk through the
+    // whole QuickPick flow and then hit an opaque error.
+    const gitSubfolder = findGitSubfolder(folder.uri.fsPath);
+    if (!isGitRepo(folder.uri.fsPath)) {
+      const buttons = gitSubfolder
+        ? [`Open ${path.basename(gitSubfolder)}`]
+        : ['Open Folder...'];
+      const msg = gitSubfolder
+        ? `ctx export needs a git repository. "${folder.name}" isn't one, but a git repo was found at "${path.basename(gitSubfolder)}".`
+        : `ctx export needs a git repository. "${folder.name}" is not a git repo.`;
+      const action = await vscode.window.showErrorMessage(msg, ...buttons);
+      if (gitSubfolder && action === `Open ${path.basename(gitSubfolder)}`) {
+        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(gitSubfolder), false);
+      } else if (action === 'Open Folder...') {
+        await vscode.commands.executeCommand('workbench.action.files.openFolder');
+      }
       return;
     }
 
@@ -198,6 +219,63 @@ function resolveWorkspaceFolder(input?: unknown): vscode.WorkspaceFolder | undef
     return vscode.workspace.workspaceFolders[0];
   }
   return undefined;
+}
+
+/**
+ * Returns true iff `dir` is inside (or is) a git repository.
+ * Matches the Go CLI's notion of a repo: walks up parents looking
+ * for a `.git` entry. We use fs rather than spawning `git` because
+ * it's an order of magnitude faster and doesn't depend on git
+ * being on PATH (the binary will check that itself later).
+ */
+function isGitRepo(dir: string): boolean {
+  let current = path.resolve(dir);
+  for (;;) {
+    if (fs.existsSync(path.join(current, '.git'))) {
+      return true;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return false;
+    }
+    current = parent;
+  }
+}
+
+/**
+ * Looks for an immediate child of `root` that is a git repo. Used to
+ * offer a one-click "switch to the right folder" action when the user
+ * has opened a parent folder (the common case: opening ~/code when
+ * they meant ~/code/my-project).
+ *
+ * Only scans one level deep to avoid surprises — if there are multiple
+ * git repos under the workspace, the user should pick manually.
+ */
+function findGitSubfolder(root: string): string | undefined {
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(root);
+  } catch {
+    return undefined;
+  }
+  const candidates: string[] = [];
+  for (const entry of entries) {
+    const full = path.join(root, entry);
+    let stat;
+    try {
+      stat = fs.statSync(full);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory() && !entry.startsWith('.') && entry !== 'node_modules') {
+      if (fs.existsSync(path.join(full, '.git'))) {
+        candidates.push(full);
+      }
+    }
+  }
+  // Return the sole candidate; if there are several the user has to
+  // pick manually because we can't guess which they meant.
+  return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 function formatBytes(n: number): string {
