@@ -1,11 +1,10 @@
 # ctx — Context Handoff
 
+[VS Code extension](https://marketplace.visualstudio.com/items?itemName=riddhikatarki.ctx) · [CLI releases](https://github.com/RiddhiKatarki/ctx/releases)
 
 A cross-platform CLI tool that allows developers to export and import the **working context** of an AI-assisted software development session.
 
 `ctx` serializes the current development state (git metadata, modified files, prompt history, AI-generated summary) into a portable `.ctx` bundle so another developer or AI agent can continue working with minimal onboarding.
-
-**Goal:** Reduce project handoff time from ~30-45 minutes to under 5-10 minutes.
 
 ## Core Principles
 
@@ -187,17 +186,6 @@ The tool relies on interfaces so providers can be swapped later:
 **PromptProvider** — currently mock or file-based; future: Claude Code, Cursor, OpenCode, Windsurf, Aider.
 
 **SummaryProvider** — currently template (local) or OpenAI-compatible; future: Anthropic, Venice, Ollama, local models.
-
-## Security
-
-V1 automatically excludes files matching secret patterns:
-
-- `.env`, `.env.local`
-- `*.pem`, `*.key`
-- `id_rsa`, `id_rsa.pub`
-- `*.p12`, `*.pfx`
-
-These are skipped with a log message. Future versions will include full secret scanning and user-configurable exclusions.
 
 ## Development
 
