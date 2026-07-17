@@ -57,6 +57,10 @@ async function renderInspectPanel(result: InspectResult, bundlePath: string): Pr
     },
   );
 
+  panel.webview.html = renderInspectHtml(result, bundlePath);
+}
+
+function renderInspectHtml(result: InspectResult, bundlePath: string): string {
   const sections = result.summary_sections;
   const cards = SECTION_LABELS.map(({ key, label }) => {
     const text = sections[key] || '(not provided)';
@@ -70,24 +74,38 @@ async function renderInspectPanel(result: InspectResult, bundlePath: string): Pr
     ? ''
     : '<div class="banner invalid">⚠ This bundle failed validation.</div>';
 
-  panel.webview.html = `<!DOCTYPE html>
+  const filesList = result.files.length > 0
+    ? `<footer>
+        <strong>Files:</strong>
+        <ul>${result.files.map((f) => `<li><code>${escape(f)}</code></li>`).join('')}</ul>
+      </footer>`
+    : '';
+
+  // Serialize sections for the copy-as-markdown script. Escape </script>
+  // sequences to prevent breakout (the summary text is trusted but this
+  // is cheap insurance).
+  const sectionsJson = JSON.stringify(sections).replace(/</g, '\\u003c');
+
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
   <title>ctx inspect: ${escape(basename(bundlePath))}</title>
   <style>
-    body { font-family: var(--vscode-font-family, sans-serif); color: var(--vscode-foreground); padding: 1rem; max-width: 900px; margin: 0 auto; }
+    body { font-family: var(--vscode-font-family, sans-serif); color: var(--vscode-foreground, #333); padding: 1rem; max-width: 900px; margin: 0 auto; background-color: var(--vscode-editor-background, #fff); }
     header h1 { font-size: 1.2rem; margin-bottom: 0.25rem; }
-    header .meta { color: var(--vscode-descriptionForeground); font-size: 0.9rem; margin-bottom: 1rem; }
+    header .meta { color: var(--vscode-descriptionForeground, #666); font-size: 0.9rem; margin-bottom: 1rem; }
     .toolbar { margin-bottom: 1rem; }
-    .toolbar button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 2px; }
+    .toolbar button { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); border: none; padding: 0.4rem 0.8rem; cursor: pointer; border-radius: 2px; font-size: 0.85rem; }
     .toolbar button:hover { filter: brightness(1.1); }
-    .card { margin-bottom: 1rem; padding: 0.75rem 1rem; border-left: 3px solid var(--vscode-textLink-foreground); background: var(--vscode-textBlockQuote-background); }
-    .card h2 { font-size: 0.95rem; margin: 0 0 0.5rem 0; color: var(--vscode-textLink-foreground); }
+    .card { margin-bottom: 1rem; padding: 0.75rem 1rem; border-left: 3px solid var(--vscode-textLink-foreground, #007acc); background: var(--vscode-textBlockQuote-background, rgba(0,0,0,0.04)); border-radius: 0 3px 3px 0; }
+    .card h2 { font-size: 0.95rem; margin: 0 0 0.5rem 0; color: var(--vscode-textLink-foreground, #007acc); }
     .card .content { white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; }
-    .banner.invalid { background: var(--vscode-inputValidation-errorBackground, rgba(255,0,0,0.1)); border: 1px solid var(--vscode-inputValidation-errorBorder, red); padding: 0.5rem 1rem; margin-bottom: 1rem; border-radius: 2px; }
-    footer { margin-top: 1.5rem; padding-top: 0.5rem; border-top: 1px solid var(--vscode-editorWidget-border, #ccc); color: var(--vscode-descriptionForeground); font-size: 0.85rem; }
-    code { font-family: var(--vscode-editor-font-family, monospace); }
+    .banner.invalid { background: rgba(255,0,0,0.1); border: 1px solid rgba(255,0,0,0.3); padding: 0.5rem 1rem; margin-bottom: 1rem; border-radius: 2px; }
+    footer { margin-top: 1.5rem; padding-top: 0.5rem; border-top: 1px solid var(--vscode-editorWidget-border, #ccc); color: var(--vscode-descriptionForeground, #666); font-size: 0.85rem; }
+    footer ul { padding-left: 1.5rem; }
+    code { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.04)); padding: 0.1rem 0.3rem; border-radius: 2px; }
   </style>
 </head>
 <body>
@@ -99,27 +117,36 @@ async function renderInspectPanel(result: InspectResult, bundlePath: string): Pr
   ${invalidBanner}
 
   <div class="toolbar">
-    <button onclick="copyAsMarkdown()">Copy as Markdown</button>
+    <button id="copy-btn">Copy as Markdown</button>
   </div>
 
   ${cards}
 
-  <footer>
-    <strong>Files:</strong>
-    <ul>${result.files.map((f) => `<li><code>${escape(f)}</code></li>`).join('')}</ul>
-  </footer>
+  ${filesList}
 
   <script>
-    const sections = ${JSON.stringify(sections)};
-    function copyAsMarkdown() {
-      const md = Object.entries(sections).map(([k, v]) => '## ' + k + '\\n\\n' + v).join('\\n\\n');
-      navigator.clipboard.writeText(md).then(() => {
-        const btn = document.querySelector('.toolbar button');
-        const original = btn.textContent;
-        btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = original; }, 1200);
-      });
-    }
+    (function() {
+      var sections = ${sectionsJson};
+      var btn = document.getElementById('copy-btn');
+      if (btn) {
+        btn.addEventListener('click', function() {
+          var md = Object.keys(sections).map(function(k) {
+            return '## ' + k + '\\n\\n' + sections[k];
+          }).join('\\n\\n');
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(md).then(function() {
+              var orig = btn.textContent;
+              btn.textContent = 'Copied!';
+              setTimeout(function() { btn.textContent = orig; }, 1200);
+            });
+          } else {
+              var orig = btn.textContent;
+              btn.textContent = 'Copied!';
+              setTimeout(function() { btn.textContent = orig; }, 1200);
+          }
+        });
+      }
+    })();
   </script>
 </body>
 </html>`;

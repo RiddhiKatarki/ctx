@@ -70,17 +70,18 @@ function renderHtml(result: InfoResult): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
   <title>ctx info: ${escape(basename(result.path))}</title>
   <style>
-    body { font-family: var(--vscode-font-family, sans-serif); color: var(--vscode-foreground); padding: 1rem; }
+    body { font-family: var(--vscode-font-family, sans-serif); color: var(--vscode-foreground, #333); padding: 1rem; background-color: var(--vscode-editor-background, #fff); }
     h1 { font-size: 1.1rem; margin-top: 0; }
+    h2 { font-size: 0.95rem; margin: 1rem 0 0.5rem 0; color: var(--vscode-textLink-foreground, #007acc); }
     table { border-collapse: collapse; margin: 1rem 0; }
-    th { text-align: left; padding: 0.25rem 1rem 0.25rem 0; color: var(--vscode-descriptionForeground); font-weight: normal; vertical-align: top; }
+    th { text-align: left; padding: 0.25rem 1rem 0.25rem 0; color: var(--vscode-descriptionForeground, #666); font-weight: normal; vertical-align: top; }
     td { padding: 0.25rem 0; }
-    pre { background: var(--vscode-textCodeBlock-background); padding: 0.5rem; border-radius: 3px; overflow: auto; max-height: 300px; }
+    pre { background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.04)); padding: 0.5rem; border-radius: 3px; overflow: auto; max-height: 300px; white-space: pre-wrap; word-wrap: break-word; }
     code { font-family: var(--vscode-editor-font-family, monospace); }
-    .tabs button { background: none; border: 1px solid var(--vscode-input-border, #ccc); color: var(--vscode-foreground); padding: 0.25rem 0.5rem; cursor: pointer; margin-right: 0.25rem; }
-    .tabs button.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: var(--vscode-button-background); }
+    ul { padding-left: 1.5rem; }
   </style>
 </head>
 <body>
