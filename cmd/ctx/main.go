@@ -38,7 +38,7 @@ the working context of an AI-assisted software development session.
 It serializes the current development state (git metadata, modified files,
 prompt history, AI summary) into a portable .ctx bundle so another developer
 or AI agent can continue working with minimal onboarding.`,
-	Version:    version,
+	Version:      version,
 	SilenceUsage: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		jsonOutput, _ = cmd.Flags().GetBool("json")
@@ -59,9 +59,9 @@ var exportCmd = &cobra.Command{
 Packages everything into a portable .ctx archive.
 
 Use --json to emit a structured result suitable for scripting and tools.`,
-	RunE:           runExport,
-	SilenceErrors:  true,
-	SilenceUsage:   true,
+	RunE:          runExport,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 var inspectCmd = &cobra.Command{
@@ -71,10 +71,10 @@ var inspectCmd = &cobra.Command{
 without extracting or importing the full archive.
 
 Use --json to emit a structured result suitable for tooling.`,
-	Args:           cobra.MaximumNArgs(1),
-	RunE:           runInspect,
-	SilenceErrors:  true,
-	SilenceUsage:   true,
+	Args:          cobra.MaximumNArgs(1),
+	RunE:          runInspect,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 var importCmd = &cobra.Command{
@@ -85,10 +85,10 @@ and displays a summary of its contents.
 
 Use --outdir to extract the bundle contents to a directory.
 Use --json to emit a structured result suitable for tooling.`,
-	Args:           cobra.MaximumNArgs(1),
-	RunE:           runImport,
-	SilenceErrors:  true,
-	SilenceUsage:   true,
+	Args:          cobra.MaximumNArgs(1),
+	RunE:          runImport,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 var listCmd = &cobra.Command{
@@ -236,17 +236,17 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	rep := buildReporter()
 	result, runErr := export.Run(export.Config{
-		OutputPath:         exportOutput,
-		ProjectName:        exportProjectName,
-		WorkingDir:         wd,
-		PromptProvider:     promptProv,
-		SummaryProvider:    summProv,
-		ExtraFiles:         extraFiles,
-		Reporter:           rep,
-		DisableSecretScan:  exportNoSecretScan,
-		IncludeSecrets:     exportIncludeSecrets,
-		IncludeContents:    exportIncludeContents,
-		ContentsThreshold:  exportContentsThreshold,
+		OutputPath:        exportOutput,
+		ProjectName:       exportProjectName,
+		WorkingDir:        wd,
+		PromptProvider:    promptProv,
+		SummaryProvider:   summProv,
+		ExtraFiles:        extraFiles,
+		Reporter:          rep,
+		DisableSecretScan: exportNoSecretScan,
+		IncludeSecrets:    exportIncludeSecrets,
+		IncludeContents:   exportIncludeContents,
+		ContentsThreshold: exportContentsThreshold,
 	})
 	if runErr != nil {
 		return classifyExportError(runErr)
@@ -293,9 +293,9 @@ func runImport(cmd *cobra.Command, args []string) error {
 
 	rep := buildReporter()
 	result, runErr := importctx.Run(importctx.Config{
-		Path:      path,
-		OutDir:    importOutDir,
-		Reporter:  rep,
+		Path:     path,
+		OutDir:   importOutDir,
+		Reporter: rep,
 	})
 	if runErr != nil {
 		if isZipErr(runErr) {

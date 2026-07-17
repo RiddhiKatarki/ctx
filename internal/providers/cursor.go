@@ -290,9 +290,9 @@ func (p *cursorProvider) loadComposers(db *database_sql.DB) ([]composerRef, erro
 
 	var hdr struct {
 		AllComposers []struct {
-			ComposerID   string `json:"composerId"`
-			Name         string `json:"name"`
-			LastUpdatedAt int64 `json:"lastUpdatedAt"`
+			ComposerID    string `json:"composerId"`
+			Name          string `json:"name"`
+			LastUpdatedAt int64  `json:"lastUpdatedAt"`
 		} `json:"allComposers"`
 	}
 	if err := json.Unmarshal(raw, &hdr); err != nil {

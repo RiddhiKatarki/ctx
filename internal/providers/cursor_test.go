@@ -291,10 +291,10 @@ func buildModernDB(t *testing.T, dbPath, composerID, name string, bubbles []map[
 
 	// composerData:<id>
 	cd, _ := json.Marshal(map[string]any{
-		"composerId":                 composerID,
-		"name":                       name,
-		"createdAt":                  1750000000000,
-		"lastUpdatedAt":              1750000002000,
+		"composerId":                  composerID,
+		"name":                        name,
+		"createdAt":                   1750000000000,
+		"lastUpdatedAt":               1750000002000,
 		"fullConversationHeadersOnly": bubbleHeaders(bubbles),
 	})
 	if _, err := db.Exec(`INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)`, "composerData:"+composerID, cd); err != nil {

@@ -29,14 +29,14 @@ type AvailChecker interface {
 type Source string
 
 const (
-	SourceAuto      Source = "auto"
-	SourceFile      Source = "file"
-	SourceClaude    Source = "claudecode"
-	SourceOpenCode  Source = "opencode"
-	SourceCursor    Source = "cursor"
-	SourceAider     Source = "aider"
-	SourceNone      Source = "none"
-	SourceMock      Source = "mock"
+	SourceAuto     Source = "auto"
+	SourceFile     Source = "file"
+	SourceClaude   Source = "claudecode"
+	SourceOpenCode Source = "opencode"
+	SourceCursor   Source = "cursor"
+	SourceAider    Source = "aider"
+	SourceNone     Source = "none"
+	SourceMock     Source = "mock"
 )
 
 // Options configures NewPromptProvider.
@@ -153,8 +153,8 @@ func (p *MockPromptProvider) History() ([]types.Prompt, error) {
 }
 
 // Available always returns false so auto-detection skips Mock.
-func (p *MockPromptProvider) Available() bool                  { return false }
-func (p *MockPromptProvider) LastModified() (time.Time, bool)  { return time.Time{}, false }
+func (p *MockPromptProvider) Available() bool                 { return false }
+func (p *MockPromptProvider) LastModified() (time.Time, bool) { return time.Time{}, false }
 
 // FilePromptProvider reads prompt history from a JSON file.
 // The file must contain an array of {role, content} objects.
