@@ -82,7 +82,7 @@ func NewPromptProvider(opts Options) (PromptProvider, error) {
 	case SourceOpenCode:
 		return NewOpenCodeProvider(dirOr(dirs, "opencode", defaultOpenCodeDir())), nil
 	case SourceCursor:
-		return NewCursorProvider(dirOr(dirs, "cursor", "")), nil
+		return NewCursorProvider(dirOr(dirs, "cursor", ""), opts.WorkingDir), nil
 	case SourceAider:
 		return NewAiderProvider(dirOr(dirs, "aider", ""), opts.WorkingDir), nil
 	case SourceNone, SourceMock:
@@ -99,7 +99,7 @@ func autoDetectProvider(cwd string, dirs map[string]string) (PromptProvider, err
 	probes := []PromptProvider{
 		NewOpenCodeProvider(dirOr(dirs, "opencode", defaultOpenCodeDir())),
 		NewClaudeCodeProvider(dirOr(dirs, "claudecode", ".claude"), cwd),
-		NewCursorProvider(dirOr(dirs, "cursor", "")),
+		NewCursorProvider(dirOr(dirs, "cursor", ""), cwd),
 		NewAiderProvider(dirOr(dirs, "aider", ""), cwd),
 	}
 

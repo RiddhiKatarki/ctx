@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,10 +17,11 @@ import (
 	"github.com/RiddhiKatarki/ctx/internal/inspect"
 	"github.com/RiddhiKatarki/ctx/internal/providers"
 	"github.com/RiddhiKatarki/ctx/internal/reporter"
+	"github.com/RiddhiKatarki/ctx/internal/schema"
 	"github.com/RiddhiKatarki/ctx/internal/summary"
 )
 
-const version = "2.0.0"
+const version = "2.1.0"
 
 // Output flags — persisted across subcommands.
 var (
@@ -116,6 +118,33 @@ Always emits JSON — this command is built for tooling consumption.`,
 	SilenceUsage:  true,
 }
 
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print ctx version and bundle-format compatibility info",
+	Long: `Prints the ctx version. With --json, emits a machine-readable object
+suitable for tooling (e.g. a VS Code extension activation check):
+
+  {"version":"2.1.0","bundle_format":1,"binary_os":"linux","binary_arch":"amd64"}
+
+Use this to verify binary/extension compatibility.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		info := map[string]any{
+			"version":       version,
+			"bundle_format": schema.BundleVersion,
+			"binary_os":     runtime.GOOS,
+			"binary_arch":   runtime.GOARCH,
+		}
+		if jsonOutput {
+			return emitJSON(info)
+		}
+		fmt.Printf("ctx version %s (bundle format %d, %s/%s)\n",
+			version, schema.BundleVersion, runtime.GOOS, runtime.GOARCH)
+		return nil
+	},
+	SilenceErrors: true,
+	SilenceUsage:  true,
+}
+
 // Export flags
 var (
 	exportOutput            string
@@ -144,6 +173,7 @@ func init() {
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(versionCmd)
 
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "emit machine-readable JSON to stdout (single result object)")
 	rootCmd.PersistentFlags().BoolVar(&streamOutput, "stream", false, "emit NDJSON progress events to stdout (one line per stage)")
