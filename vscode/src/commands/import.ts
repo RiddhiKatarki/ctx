@@ -4,7 +4,7 @@ import * as os from 'os';
 import type { CtxClient } from '../binary/client';
 import type { ImportResult, StreamEvent } from '../types';
 import { Settings } from '../config/settings';
-import { reportError, reportSuccess } from '../ui/notifications';
+import { reportError, reportUserActionSuccess } from '../ui/notifications';
 import { log } from '../util/logger';
 
 export function makeImportCommand(getClient: () => Promise<CtxClient>) {
@@ -35,15 +35,27 @@ export function makeImportCommand(getClient: () => Promise<CtxClient>) {
     try {
       const result = await runImportWithProgress(args, getClient);
       const summary = formatSummary(result);
-      reportSuccess(summary, settings);
 
+      // Import is an explicit user action — always show the result,
+      // regardless of ctx.showNotifications. Offer an Inspect button
+      // so the user can drill into the 9-section summary WebView.
       if (extractTo) {
-        const patchAction = await vscode.window.showInformationMessage(
+        // Extract path: offer both Inspect and Apply patch.
+        const action = await reportUserActionSuccess(
           `${summary} Extracted to ${path.basename(extractTo)}.`,
+          'Inspect',
           'Apply patch',
         );
-        if (patchAction === 'Apply patch') {
+        if (action === 'Apply patch') {
           await applyPatch(path.join(extractTo, 'patch.diff'));
+        } else if (action === 'Inspect') {
+          await vscode.commands.executeCommand('ctx.inspect', vscode.Uri.file(bundlePath));
+        }
+      } else {
+        // Validate-only path: the summary is the whole point.
+        const action = await reportUserActionSuccess(summary, 'Inspect');
+        if (action === 'Inspect') {
+          await vscode.commands.executeCommand('ctx.inspect', vscode.Uri.file(bundlePath));
         }
       }
     } catch (err) {

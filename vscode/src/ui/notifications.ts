@@ -51,12 +51,30 @@ export function reportError(err: unknown, settings: Settings): void {
 
 /**
  * Reports a successful operation. Suppressed unless the user opted
- * into 'all' notifications.
+ * into 'all' notifications. Use this for background or implicit
+ * successes (e.g. auto-refresh) where a toast would be noisy.
  */
 export function reportSuccess(message: string, settings: Settings): void {
   if (settings.showNotifications === 'all') {
     void vscode.window.showInformationMessage(`ctx: ${message}`);
   }
+}
+
+/**
+ * Reports a successful user-initiated action. ALWAYS shows a
+ * notification (regardless of ctx.showNotifications) because the
+ * user explicitly invoked the command and expects feedback. Optional
+ * action buttons can be provided; clicking one resolves the returned
+ * promise with the button label.
+ *
+ * Use this for the final step of commands like import/export where
+ * silence would be confusing.
+ */
+export async function reportUserActionSuccess(
+  message: string,
+  ...buttons: string[]
+): Promise<string | undefined> {
+  return vscode.window.showInformationMessage(`ctx: ${message}`, ...buttons);
 }
 
 function surpriseError(err: unknown): string {
