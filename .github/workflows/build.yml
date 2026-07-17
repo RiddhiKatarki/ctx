@@ -55,17 +55,17 @@ jobs:
 
   cross-compile:
     name: Cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { goos: linux,   goarch: amd64, runner: ubuntu-latest }
-          - { goos: linux,   goarch: arm64, runner: ubuntu-latest }
-          - { goos: darwin,  goarch: amd64, runner: macos-13 }
-          - { goos: darwin,  goarch: arm64, runner: macos-14 }
-          - { goos: windows, goarch: amd64, runner: windows-latest }
-          - { goos: windows, goarch: arm64, runner: windows-latest }
-    runs-on: ${{ matrix.runner }}
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
