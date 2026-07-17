@@ -1,6 +1,6 @@
 # ctx — Context Handoff
 
-[![Version](https://img.shields.io/badge/version-1.0.0--rc.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 > Cut AI-assisted development handoff time from 30–45 minutes to under 5–10 minutes.

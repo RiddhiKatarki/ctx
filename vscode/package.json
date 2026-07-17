@@ -2,7 +2,7 @@
   "name": "ctx",
   "displayName": "ctx — Context Handoff",
   "description": "Export and import AI-assisted development session context as portable .ctx bundles. Wraps the ctx CLI with a native VS Code experience.",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "publisher": "riddhikatarki",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -12,7 +12,7 @@
   },
   "badges": [
     {
-      "url": "https://img.shields.io/badge/version-1.0.0--rc.1-blue.svg",
+      "url": "https://img.shields.io/badge/version-1.0.0-blue.svg",
       "href": "https://github.com/RiddhiKatarki/ctx/blob/main/vscode/CHANGELOG.md",
       "description": "version"
     },

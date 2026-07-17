@@ -5,9 +5,13 @@ All notable changes to the **ctx** VS Code extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+_Forthcoming changes live on the `main` branch on GitHub._
+
 ## [1.0.0] - 2026-07-17
 
-Initial public release. Wraps the `ctx` CLI v2.1.0 with a native VS Code experience.
+First stable release. Wraps the `ctx` CLI v2.1.0 with a native VS Code experience.
 
 ### Added
 - **Commands**: `ctx: Export Workspace Context`, `ctx: Import Bundle...`, `ctx: Inspect Bundle`, `ctx: Show Bundle Metadata`, `ctx: Apply Patch from Bundle`, `ctx: Refresh Bundles`.
@@ -24,7 +28,3 @@ Initial public release. Wraps the `ctx` CLI v2.1.0 with a native VS Code experie
 
 ### Bundled CLI version
 - `ctx` v2.1.0 — adds Cursor SQLite prompt extraction and the `ctx version --json` subcommand.
-
-## [Unreleased]
-
-_See the `main` branch on GitHub._
