@@ -1,0 +1,83 @@
+name: build
+
+# Runs on every push/PR to verify the Go build + tests pass across all
+# supported platforms. Does NOT publish artifacts. Publishing is the
+# release.yml workflow's job (triggered by tags).
+on:
+  push:
+    branches: [main, feat/vscode-extension]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test & vet (linux/amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          cache: true
+      - name: Go format check
+        run: |
+          if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
+            echo "::error::Files need gofmt:"
+            gofmt -l .
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race -cover ./...
+
+  cross-compile:
+    name: Cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64, runner: ubuntu-latest }
+          - { goos: linux,   goarch: arm64, runner: ubuntu-latest }
+          - { goos: darwin,  goarch: amd64, runner: macos-13 }
+          - { goos: darwin,  goarch: arm64, runner: macos-14 }
+          - { goos: windows, goarch: amd64, runner: windows-latest }
+          - { goos: windows, goarch: arm64, runner: windows-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          cache: true
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        shell: bash
+        run: |
+          exe=""
+          if [ "$GOOS" = "windows" ]; then exe=".exe"; fi
+          go build -trimpath -ldflags "-s -w" -o "ctx-${GOOS}-${GOARCH}${exe}" ./cmd/ctx
+          ls -lh "ctx-${GOOS}-${GOARCH}${exe}"
+      - name: Smoke test version subcommand (POSIX only)
+        if: matrix.goos != 'windows'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          # Re-build for the host platform to actually execute the binary.
+          # (We can't run a darwin/windows binary on linux runners.)
+          if [ "$(uname -s | tr A-Z a-z)" = "$GOOS" ] || \
+             { [ "$GOOS" = "darwin" ] && [ "$(uname -s)" = "Darwin" ]; }; then
+            ./ctx-${GOOS}-${GOARCH} version
+            ./ctx-${GOOS}-${GOARCH} version --json
+          else
+            echo "Skipping smoke test: cannot run $GOOS binary on $(uname -s)"
+          fi
