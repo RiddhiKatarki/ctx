@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Forthcoming changes live on the `main` branch on GitHub._
 
+## [1.1.0] - 2026-07-17
+
+Patch release with UX fixes and two small features.
+
+### Added
+- **Custom LLM endpoints per export** — when using the OpenAI-compatible summary provider, you're now prompted inline for the base URL and model name. No need to edit settings first. Works with Surplus, Ollama, vLLM, Venice, and any other OpenAI-compatible endpoint.
+- **`ctx: Update OpenAI API Key` command** — replace or delete the stored API key from the Command Palette without re-running the export flow.
+- **Pre-flight git check** — `ctx: Export Workspace Context` now fails fast with an actionable error if the workspace isn't a git repo, and offers a one-click "Open <subfolder>" action when a single git repo is detected under the workspace root.
+- **Import success notification with Inspect button** — the result of `ctx: Import Bundle...` is now always surfaced (previously silent when `ctx.showNotifications` was `errorsOnly`), with an Inspect button to drill into the 9-section summary.
+
+### Changed
+- **Inspect and Info now render via Markdown preview** instead of custom WebViews. This works reliably across desktop VS Code, code-server, and vscode.dev where the bespoke WebViews were rendering blank in some sandboxed environments.
+- **README rewritten** to lead with the use case rather than architecture details.
+
+### Bundled CLI version
+- `ctx` v2.1.0 (unchanged from 1.0.0).
+
 ## [1.0.0] - 2026-07-17
 
 First stable release. Wraps the `ctx` CLI v2.1.0 with a native VS Code experience.
