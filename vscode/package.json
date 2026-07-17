@@ -91,10 +91,23 @@
       "ctx": [
         {
           "id": "ctx.bundles",
-          "name": "Context Bundles"
+          "name": "Context Bundles",
+          "welcomeView": true
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "ctx.bundles",
+        "contents": "No .ctx bundles found in this workspace.\n[Export context](command:ctx.export)\n[Import a bundle...](command:ctx.import)\nTo learn more [read the docs](https://github.com/RiddhiKatarki/ctx).",
+        "when": "workspaceFolderCount > 0"
+      },
+      {
+        "view": "ctx.bundles",
+        "contents": "Open a workspace folder to see its .ctx bundles.\n[Open Folder...](command:workbench.action.files.openFolder)\n[Import a bundle...](command:ctx.import)",
+        "when": "workspaceFolderCount == 0"
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
@@ -106,15 +119,15 @@
         },
         {
           "command": "ctx.inspect",
-          "when": "false"
+          "when": "activeWebviewPanelId != 'ctx.inspect' && resourceFilename =~ /\\.ctx$/"
         },
         {
           "command": "ctx.info",
-          "when": "false"
+          "when": "resourceFilename =~ /\\.ctx$/"
         },
         {
           "command": "ctx.applyPatch",
-          "when": "false"
+          "when": "resourceFilename =~ /\\.ctx$/"
         },
         {
           "command": "ctx.list.refresh",
@@ -148,6 +161,11 @@
           "command": "ctx.inspect",
           "when": "resourceFilename =~ /\\.ctx$/",
           "group": "navigation"
+        },
+        {
+          "command": "ctx.info",
+          "when": "resourceFilename =~ /\\.ctx$/",
+          "group": "navigation"
         }
       ],
       "view/title": [
@@ -160,6 +178,28 @@
           "command": "ctx.export",
           "when": "view == ctx.bundles && workspaceFolderCount > 0",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ctx.inspect",
+          "when": "view == ctx.bundles && viewItem == ctx.bundle",
+          "group": "inline@1"
+        },
+        {
+          "command": "ctx.info",
+          "when": "view == ctx.bundles && viewItem == ctx.bundle",
+          "group": "inline@2"
+        },
+        {
+          "command": "ctx.import",
+          "when": "view == ctx.bundles && viewItem == ctx.bundle",
+          "group": "ctx@1"
+        },
+        {
+          "command": "ctx.applyPatch",
+          "when": "view == ctx.bundles && viewItem == ctx.bundle",
+          "group": "ctx@2"
         }
       ]
     },

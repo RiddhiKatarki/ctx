@@ -8,6 +8,7 @@ import { makeInspectCommand } from './commands/inspect';
 import { makeExportCommand } from './commands/export';
 import { makeImportCommand, makeApplyPatchCommand } from './commands/import';
 import { BundleTreeProvider } from './providers/bundleTreeProvider';
+import { BundleDecorationProvider } from './providers/fileDecorationProvider';
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
   log(`activating ${EXTENSION_ID}`);
@@ -46,12 +47,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.commands.registerCommand(COMMANDS.listRefresh, () => treeProvider.refresh()),
   );
 
+  // File decoration — subtle badge for .ctx files in the explorer.
+  const decorationProvider = new BundleDecorationProvider();
+  disposables.push(
+    vscode.window.registerFileDecorationProvider(decorationProvider),
+  );
+
   // Auto-refresh on workspace file changes (.ctx files added/removed).
   const watcher = vscode.workspace.createFileSystemWatcher('**/*.ctx');
   disposables.push(watcher);
-  disposables.push(watcher.onDidCreate(() => treeProvider.refresh()));
-  disposables.push(watcher.onDidDelete(() => treeProvider.refresh()));
-  disposables.push(watcher.onDidChange(() => treeProvider.refresh()));
+  disposables.push(watcher.onDidCreate(() => { treeProvider.refresh(); decorationProvider.refresh(); }));
+  disposables.push(watcher.onDidDelete(() => { treeProvider.refresh(); decorationProvider.refresh(); }));
+  disposables.push(watcher.onDidChange(() => { treeProvider.refresh(); decorationProvider.refresh(); }));
 
   context.subscriptions.push(...disposables);
 
