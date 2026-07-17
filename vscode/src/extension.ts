@@ -7,6 +7,7 @@ import { makeInfoCommand } from './commands/info';
 import { makeInspectCommand } from './commands/inspect';
 import { makeExportCommand } from './commands/export';
 import { makeImportCommand, makeApplyPatchCommand } from './commands/import';
+import { makeUpdateApiKeyCommand } from './commands/updateApiKey';
 import { BundleTreeProvider } from './providers/bundleTreeProvider';
 import { BundleDecorationProvider } from './providers/fileDecorationProvider';
 
@@ -36,6 +37,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   );
   disposables.push(
     vscode.commands.registerCommand(COMMANDS.applyPatch, makeApplyPatchCommand(getClientFor)),
+  );
+  disposables.push(
+    vscode.commands.registerCommand('ctx.updateApiKey', makeUpdateApiKeyCommand(secrets)),
   );
 
   // Tree view — refreshes when .ctx files change in the workspace.

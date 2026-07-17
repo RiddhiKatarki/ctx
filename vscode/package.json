@@ -93,6 +93,11 @@
         "title": "ctx: Refresh Bundles",
         "category": "ctx",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "ctx.updateApiKey",
+        "title": "ctx: Update OpenAI API Key",
+        "category": "ctx"
       }
     ],
     "viewsContainers": {
@@ -149,6 +154,9 @@
         {
           "command": "ctx.list.refresh",
           "when": "false"
+        },
+        {
+          "command": "ctx.updateApiKey"
         }
       ],
       "explorer/context": [

@@ -4,6 +4,10 @@
     "content": "Implement retry logic for the auth module with exponential backoff."
   },
   {
+    "role": "system",
+    "content": "scratch: revisit backoff cap"
+  },
+  {
     "role": "assistant",
     "content": "I'll add a retry wrapper around the authenticate function. The wrapper will use exponential backoff with a maximum of 3 retries and a base delay of 1 second."
   },
